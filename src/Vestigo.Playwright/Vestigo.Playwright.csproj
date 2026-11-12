@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>Vestigo.Playwright</RootNamespace>
+    <Description>Optional Vestigo plugin that forwards the official Playwright MCP tools.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Vestigo.Abstractions">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="ModelContextProtocol.AspNetCore">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vestigo.Playwright.Tests" />
+  </ItemGroup>
+  <Target Name="RemoveSharedHostAssemblies" AfterTargets="Publish">
+    <ItemGroup>
+      <SharedHostAssembly Include="$(PublishDir)Vestigo.Abstractions.dll" />
+      <SharedHostAssembly Include="$(PublishDir)Vestigo.Abstractions.pdb" />
+      <SharedHostAssembly Include="$(PublishDir)Vestigo.Abstractions.xml" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.dll" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.pdb" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.xml" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.Core.dll" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.Core.pdb" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.Core.xml" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.AspNetCore.dll" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.AspNetCore.pdb" />
+      <SharedHostAssembly Include="$(PublishDir)ModelContextProtocol.AspNetCore.xml" />
+      <SharedHostAssembly Include="$(PublishDir)Microsoft.Extensions.AI.Abstractions.dll" />
+      <SharedHostAssembly Include="$(PublishDir)Microsoft.Extensions.AI.Abstractions.pdb" />
+      <SharedHostAssembly Include="$(PublishDir)Microsoft.Extensions.AI.Abstractions.xml" />
+    </ItemGroup>
+    <Delete Files="@(SharedHostAssembly)" />
+  </Target>
+</Project>

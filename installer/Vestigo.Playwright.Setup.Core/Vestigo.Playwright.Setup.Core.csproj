@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Vestigo.Playwright.Setup</RootNamespace>
+    <Description>Setup decisions for the Vestigo.Playwright installer. This library does not install Windows Installer packages.</Description>
+  </PropertyGroup>
+</Project>
