@@ -1,0 +1,22 @@
+---
+description: Keep the Playwright plugin independent, pinned, and isolated by its full session identity
+alwaysApply: true
+---
+
+# Playwright plugin development
+
+This repository is the external `playwright` plugin. A Vestigo checkout is only the host reference and integration target. Do not add Playwright to Vestigo, reference `Vestigo.Server`, or edit Vestigo's docs for this plugin.
+
+- Keep module `Playwright` disabled by default. The entry type is `Vestigo.Playwright.Plugin`, `hostApiVersion` is 1.1, and `ToolTypes` stays empty. Register one singleton `IVestigoToolProvider`.
+- Reference the `Vestigo.Abstractions` package and MCP SDK 2.2.0. Keep `@playwright/mcp` pinned at 0.0.85, as recorded in `docs/findings.md`. Do not download packages when Vestigo starts.
+- Key every browser by the full `PluginSessionIdentity`. Do not infer a session from a client name, address, or MCP transport session, reconnect a tombstoned identity, or replay a failed action.
+- Refuse managed headed mode in Windows session 0. External mode is the visible-browser path for a Vestigo service.
+- Publish the complete dependency graph, including `plugin.json`, the entry DLL, and `.deps.json`. Do not trim, single-file bundle, or ship shared host assemblies.
+- Keep plugin files writable only by SYSTEM and Administrators. Do not weaken ACLs, trust checks, or path confinement to pass a test, and never log tokens or secrets.
+- Save source and configuration as UTF-8 without BOM.
+
+Verify with `dotnet test tests/Vestigo.Playwright.Tests`. On Windows with PowerShell 7.4 or newer, run `tests/Test-PublishedHost.ps1` against a published Vestigo host, this plugin's publish directory, and the fake backend. Say when a result only used the fake backend: that does not prove headed Chrome or Edge, a service desktop, attachment to an existing browser, or an MSI install.
+
+```csharp
+SessionKey key = new(identity.OwnerId, identity.SessionId);
+```

@@ -1,0 +1,8 @@
+version: 2
+
+updates:
+  # NuGet stays out until Vestigo.Abstractions 1.1.0 is available from a source listed in nuget.config.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

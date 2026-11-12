@@ -1,0 +1,229 @@
+name: CI
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+env:
+  VESTIGO_REPOSITORY: nefarius/Vestigo
+  # Update this pin when the supported host commit changes. It supplies Vestigo.Abstractions 1.1.0.
+  VESTIGO_COMMIT: 704ad64a8c61d9cc0264af5d35cf99d044184233
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o "$tmp/gitleaks.tgz"
+          echo "${GITLEAKS_SHA256}  $tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$tmp/gitleaks.tgz" -C "$tmp" gitleaks
+          sudo install -m 0755 "$tmp/gitleaks" /usr/local/bin/gitleaks
+          gitleaks detect --source . --verbose --redact --exit-code 1
+          gitleaks dir . --verbose --redact --exit-code 1
+
+      - name: Semgrep
+        run: docker run --rm -v "$PWD:/src" semgrep/semgrep@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0 semgrep scan --config p/csharp --error --metrics=off /src
+
+  osv-restore:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
+    defaults:
+      run:
+        working-directory: plugin
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: plugin
+          persist-credentials: false
+
+      - name: Checkout pinned Vestigo host
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.VESTIGO_REPOSITORY }}
+          ref: ${{ env.VESTIGO_COMMIT }}
+          path: vestigo
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Pack Vestigo.Abstractions
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet pack ../vestigo/server/Vestigo.Abstractions/Vestigo.Abstractions.csproj -c Release -o artifacts/contracts
+          $package = Join-Path artifacts/contracts 'Vestigo.Abstractions.1.1.0.nupkg'
+          if (-not (Test-Path -LiteralPath $package)) { throw "Pinned host did not produce $package." }
+
+      - name: Restore NuGet lock files
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $projects = @(
+            'src/Vestigo.Playwright/Vestigo.Playwright.csproj'
+            'tests/Vestigo.Playwright.Tests/Vestigo.Playwright.Tests.csproj'
+            'tests/Vestigo.Playwright.FakeBackend/Vestigo.Playwright.FakeBackend.csproj'
+            'installer/Vestigo.Playwright.Setup.Core/Vestigo.Playwright.Setup.Core.csproj'
+          )
+          foreach ($project in $projects) {
+            dotnet restore $project --no-dependencies -p:RestorePackagesWithLockFile=true
+          }
+          $destination = 'artifacts/osv-lockfiles'
+          $sources = @{
+            playwright = 'src/Vestigo.Playwright/packages.lock.json'
+            tests = 'tests/Vestigo.Playwright.Tests/packages.lock.json'
+            'fake-backend' = 'tests/Vestigo.Playwright.FakeBackend/packages.lock.json'
+            'setup-core' = 'installer/Vestigo.Playwright.Setup.Core/packages.lock.json'
+          }
+          foreach ($name in $sources.Keys) {
+            $directory = Join-Path $destination $name
+            New-Item -ItemType Directory -Force -Path $directory | Out-Null
+            Copy-Item -LiteralPath $sources[$name] -Destination (Join-Path $directory 'packages.lock.json')
+          }
+          if ((Get-ChildItem -LiteralPath $destination -Recurse -Filter 'packages.lock.json' -File).Count -ne 4) {
+            throw 'Expected four NuGet lock files.'
+          }
+
+      - name: Upload lock files
+        uses: actions/upload-artifact@v7
+        with:
+          name: osv-lockfiles
+          path: plugin/artifacts/osv-lockfiles/
+          if-no-files-found: error
+          retention-days: 1
+
+  osv:
+    needs: osv-restore
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download lock files
+        uses: actions/download-artifact@v8
+        with:
+          name: osv-lockfiles
+          path: osv-lockfiles
+
+      - name: OSV Scanner
+        # Image published for osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 (v2.7.0).
+        run: |
+          set -euo pipefail
+          mapfile -t locks < <(find osv-lockfiles -name '*.lock.json' | sort)
+          if [[ ${#locks[@]} -ne 4 ]]; then
+            echo "Expected 4 NuGet lock files, found ${#locks[@]}."
+            find osv-lockfiles -type f -print
+            exit 1
+          fi
+          args=()
+          for lock in "${locks[@]}"; do
+            args+=(--lockfile="$lock")
+          done
+          docker run --rm -v "$PWD:/src" -w /src \
+            ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6 \
+            "${args[@]}"
+
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
+    defaults:
+      run:
+        working-directory: plugin
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: plugin
+          persist-credentials: false
+
+      - name: Checkout pinned Vestigo host
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.VESTIGO_REPOSITORY }}
+          ref: ${{ env.VESTIGO_COMMIT }}
+          path: vestigo
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Pack Vestigo.Abstractions
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet pack ../vestigo/server/Vestigo.Abstractions/Vestigo.Abstractions.csproj -c Release -o artifacts/contracts
+          $package = Join-Path artifacts/contracts 'Vestigo.Abstractions.1.1.0.nupkg'
+          if (-not (Test-Path -LiteralPath $package)) { throw "Pinned host did not produce $package." }
+
+      - name: Test
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet test tests/Vestigo.Playwright.Tests/Vestigo.Playwright.Tests.csproj -c Release
+
+      - name: Publish plugin
+        run: ./scripts/Publish-Plugin.ps1 -Output artifacts/plugin
+
+      - name: Publish fake backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet publish tests/Vestigo.Playwright.FakeBackend/Vestigo.Playwright.FakeBackend.csproj -c Release -o artifacts/fake-backend
+
+      - name: Publish pinned Vestigo host
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet publish ../vestigo/server/Vestigo.Server.csproj -c Release -r win-x64 -o artifacts/host `
+            -p:PublishReadyToRun=true `
+            -p:PublishSingleFile=false `
+            -p:SelfContained=false `
+            -p:DebugType=none `
+            -p:GenerateDocumentationFile=false `
+            -p:AllowedReferenceRelatedFileExtensions=none
+          foreach ($required in @('artifacts\host\Vestigo.exe', 'artifacts\host\Vestigo.Abstractions.dll')) {
+            if (-not (Test-Path -LiteralPath $required)) { throw "Published host is missing $required." }
+          }
+
+      - name: Exercise published host
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:DOTNET_HOST_PATH = (Get-Command dotnet).Source
+          ./tests/Test-PublishedHost.ps1 `
+            -HostPublishDirectory artifacts/host `
+            -PluginPublishDirectory artifacts/plugin `
+            -FakeBackendDirectory artifacts/fake-backend
+
+      - name: Upload published plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: vestigo-playwright
+          path: plugin/artifacts/plugin/
+          if-no-files-found: error
+          retention-days: 3
