@@ -16,5 +16,5 @@ Do not implement or commit work on `master`.
 
 ```powershell
 git status --short
-git switch -c feat/session-cleanup
+git switch -c feat/session-cleanup master
 ```
