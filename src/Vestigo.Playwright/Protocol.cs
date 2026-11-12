@@ -33,8 +33,10 @@ internal static class ToolCatalog
                     if (tools.Count >= MaxTools)
                         throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog exceeded the tool limit.");
                     int size = DescriptorBytes(tool);
-                    if (size > MaxDescriptorBytes || catalogBytes > MaxCatalogBytes - size)
-                        throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog exceeded the descriptor size limit.");
+                    if (size > MaxDescriptorBytes)
+                        throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog contained a tool descriptor that exceeded the descriptor size limit.");
+                    if (catalogBytes > MaxCatalogBytes - size)
+                        throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog exceeded the total size limit.");
                     catalogBytes += size;
                     tools.Add(tool);
                 }

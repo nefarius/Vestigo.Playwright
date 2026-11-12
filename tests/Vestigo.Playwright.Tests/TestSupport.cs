@@ -43,6 +43,7 @@ internal sealed class FakeConnector : IUpstreamConnector
 internal sealed class FakeConnection : IUpstreamConnection
 {
     public bool Disposed;
+    public bool ThrowOnDispose;
     public List<Tool> Tools { get; } = [ToolFactory.Named("browser_navigate")];
     public Func<CallToolRequestParams, CancellationToken, Task<CallToolResult>>? Call;
 
@@ -64,6 +65,8 @@ internal sealed class FakeConnection : IUpstreamConnection
     public ValueTask DisposeAsync()
     {
         Disposed = true;
+        if (ThrowOnDispose)
+            throw new IOException("dispose failed");
         return ValueTask.CompletedTask;
     }
 }

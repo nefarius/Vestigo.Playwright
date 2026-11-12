@@ -37,6 +37,14 @@ public sealed class ProtocolTests
         huge.Description = new string('x', ToolCatalog.MaxDescriptorBytes + 1);
         PlaywrightException size = await Assert.ThrowsAsync<PlaywrightException>(() => ToolCatalog.AggregateAsync((_, _) => Task.FromResult(new ListToolsResult { Tools = [huge] }), CancellationToken.None));
         Assert.Contains("descriptor size", size.Message);
+        Tool[] wide = Enumerable.Range(0, 20).Select(index =>
+        {
+            Tool tool = ToolFactory.Named("wide_" + index);
+            tool.Description = new string('y', 60_000);
+            return tool;
+        }).ToArray();
+        PlaywrightException total = await Assert.ThrowsAsync<PlaywrightException>(() => ToolCatalog.AggregateAsync((_, _) => Task.FromResult(new ListToolsResult { Tools = wide }), CancellationToken.None));
+        Assert.Contains("total size", total.Message);
     }
 
     [Fact]

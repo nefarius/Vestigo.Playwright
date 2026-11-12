@@ -40,12 +40,12 @@ internal sealed class McpUpstreamConnector : IUpstreamConnector
         bool reserved = Reserve(identity);
         try
         {
+            if (_settings.Mode == BackendMode.External)
+                return await ConnectExternalAsync(cancellationToken).ConfigureAwait(false);
             EnsureRoots();
             string leaf = IdentityPaths.Leaf(identity);
             string artifacts = Path.Combine(_settings.ArtifactsRoot, leaf);
             Directory.CreateDirectory(artifacts);
-            if (_settings.Mode == BackendMode.External)
-                return await ConnectExternalAsync(artifacts, cancellationToken).ConfigureAwait(false);
             return await ConnectManagedAsync(artifacts, leaf, cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -81,7 +81,7 @@ internal sealed class McpUpstreamConnector : IUpstreamConnector
         }
     }
 
-    private async Task<IUpstreamConnection> ConnectExternalAsync(string artifacts, CancellationToken cancellationToken)
+    private async Task<IUpstreamConnection> ConnectExternalAsync(CancellationToken cancellationToken)
     {
         var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
         var http = new HttpClient(handler, disposeHandler: true);
@@ -103,7 +103,7 @@ internal sealed class McpUpstreamConnector : IUpstreamConnector
             var transport = new HttpClientTransport(options, http, _loggerFactory, ownsHttpClient: false);
             McpClient client = await CreateClientAsync(transport, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Connected an external Playwright session.");
-            return new ClientConnection(client, http, artifacts, persistentLock: null, deleteArtifacts: false);
+            return new ClientConnection(client, http, artifacts: null, persistentLock: null, deleteArtifacts: false);
         }
         catch
         {
@@ -205,17 +205,17 @@ internal sealed class McpUpstreamConnector : IUpstreamConnector
         private readonly McpClient _client;
         private readonly OwnedProcess? _process;
         private readonly HttpClient? _http;
-        private readonly string _artifacts;
+        private readonly string? _artifacts;
         private readonly FileStream? _lock;
         private readonly bool _deleteArtifacts;
         private int _disposed;
 
-        public ClientConnection(McpClient client, HttpClient? http, string artifacts, FileStream? persistentLock, bool deleteArtifacts)
+        public ClientConnection(McpClient client, HttpClient? http, string? artifacts, FileStream? persistentLock, bool deleteArtifacts)
             : this(client, process: null, http, artifacts, persistentLock, deleteArtifacts)
         {
         }
 
-        public ClientConnection(McpClient client, OwnedProcess? process, HttpClient? http, string artifacts, FileStream? persistentLock, bool deleteArtifacts)
+        public ClientConnection(McpClient client, OwnedProcess? process, HttpClient? http, string? artifacts, FileStream? persistentLock, bool deleteArtifacts)
         {
             _client = client;
             _process = process;
@@ -246,7 +246,7 @@ internal sealed class McpUpstreamConnector : IUpstreamConnector
                 await _process.DisposeAsync().ConfigureAwait(false);
             _http?.Dispose();
             _lock?.Dispose();
-            if (_deleteArtifacts)
+            if (_deleteArtifacts && _artifacts is not null)
             {
                 try { Directory.Delete(_artifacts, recursive: true); }
                 catch (IOException) { }

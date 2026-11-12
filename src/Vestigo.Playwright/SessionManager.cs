@@ -58,19 +58,19 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
     public void Note(PluginSessionIdentity identity, PlaywrightException exception)
     {
         lock (_gate)
-            _notes[KeyFor(identity)] = exception;
+            _notes[LossKey(identity)] = exception;
     }
 
     public bool TryGetNote(PluginSessionIdentity identity, out PlaywrightException? exception)
     {
         lock (_gate)
-            return _notes.TryGetValue(KeyFor(identity), out exception);
+            return _notes.TryGetValue(LossKey(identity), out exception);
     }
 
     public void ClearNote(PluginSessionIdentity identity)
     {
         lock (_gate)
-            _notes.Remove(KeyFor(identity));
+            _notes.Remove(LossKey(identity));
     }
 
     public async Task<SessionHold> AcquireAsync(PluginSessionIdentity identity, CancellationToken cancellationToken)
@@ -254,18 +254,34 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
             acquired = true;
             cancellationToken.ThrowIfCancellationRequested();
             IUpstreamConnection connection = await _connector.ConnectAsync(identity, cancellationToken).ConfigureAwait(false);
+            bool rejected;
             lock (_gate)
             {
-                if (_shuttingDown || _losses.ContainsKey(LossKey(identity)))
+                rejected = _shuttingDown || _losses.ContainsKey(LossKey(identity));
+                if (!rejected)
                 {
-                    _ = connection.DisposeAsync();
-                    throw new PlaywrightException(PlaywrightCodes.ShuttingDown, "Playwright is shutting down.");
+                    slot.Connection = connection;
+                    slot.Connected = connection;
+                    slot.Identity = identity;
+                    slot.Connecting = null;
+                    slot.LastUsedUtc = _clock.UtcNow;
                 }
-                slot.Connection = connection;
-                slot.Connected = connection;
-                slot.Identity = identity;
-                slot.Connecting = null;
-                slot.LastUsedUtc = _clock.UtcNow;
+            }
+            if (rejected)
+            {
+                try
+                {
+                    await connection.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    _logger?.LogWarning("Playwright startup cleanup failed: {Detail}", exception.GetType().Name);
+                }
+                finally
+                {
+                    _connector.Release(identity);
+                }
+                throw new PlaywrightException(PlaywrightCodes.ShuttingDown, "Playwright is shutting down.");
             }
             return connection;
         }
@@ -346,10 +362,20 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
             slot.Connection = null;
             slot.Connected = null;
         }
-        if (connection is not null)
-            await connection.DisposeAsync().ConfigureAwait(false);
-        if (released is not null)
-            _connector.Release(released);
+        try
+        {
+            if (connection is not null)
+                await connection.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogWarning("Playwright session cleanup failed: {Detail}", exception.GetType().Name);
+        }
+        finally
+        {
+            if (released is not null)
+                _connector.Release(released);
+        }
     }
 
     private SessionKey KeyFor(PluginSessionIdentity identity) =>

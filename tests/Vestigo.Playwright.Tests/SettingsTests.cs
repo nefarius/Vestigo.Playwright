@@ -27,7 +27,12 @@ public sealed class SettingsTests
     [Fact]
     public void Parse_RejectsUnsafeValuesWithoutEchoingSecrets()
     {
-        AssertSafe(() => PlaywrightSettings.Parse(Config(ManagedPairs(("ExecutablePath", @"C:\plugin\content\node.exe"))), @"C:\plugin\content"));
+        string deployment = OperatingSystem.IsWindows() ? @"C:\plugin\content" : "/tmp/plugin-content";
+        string inside = Path.Combine(deployment, OperatingSystem.IsWindows() ? "node.exe" : "node");
+        PlaywrightException insideDeployment = Assert.Throws<PlaywrightException>(() => PlaywrightSettings.Parse(Config(ManagedPairs(("ExecutablePath", inside))), deployment));
+        Assert.Equal(PlaywrightCodes.Configuration, insideDeployment.Code);
+        Assert.Contains("outside the plugin deployment directory", insideDeployment.Message);
+        Assert.DoesNotContain(Secret, insideDeployment.ToString());
         AssertSafe(() => PlaywrightSettings.Parse(Config(ManagedPairs(("Arguments:0", "--no-sandbox"))), @"C:\plugin\content"));
         AssertSafe(() => PlaywrightSettings.Parse(Config(ManagedPairs(("ProfilesRoot", "relative"))), @"C:\plugin\content"));
         AssertSafe(() => PlaywrightSettings.Parse(Config(ManagedPairs(("Prefix", "Playwright"))), @"C:\plugin\content"));

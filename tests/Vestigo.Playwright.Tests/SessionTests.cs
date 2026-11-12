@@ -238,6 +238,26 @@ public sealed class SessionTests
     }
 
     [Fact]
+    public async Task SessionLoss_ReleasesIdentityWhenDisposalFails()
+    {
+        var connector = new FakeConnector();
+        var connection = new FakeConnection
+        {
+            ThrowOnDispose = true,
+            Call = (_, _) => throw new IOException("backend secret exploded")
+        };
+        connector.Factory = (_, _) => Task.FromResult<IUpstreamConnection>(connection);
+        var sessions = new SessionManager(TestSettings.Create(), connector, new ManualClock());
+        var provider = TestSettings.Provider(sessions);
+        PluginSessionIdentity identity = TestSettings.Identity("owner-a", "session-0123456789abcdef");
+        CallToolResult failed = await provider.CallToolAsync(new CallToolRequestParams { Name = "browser_navigate" }, new PluginToolContext("owner-a", identity), CancellationToken.None);
+        Assert.Contains(PlaywrightCodes.SessionLost, Text(failed));
+        Assert.DoesNotContain("dispose failed", Text(failed));
+        Assert.Contains(identity, connector.Released);
+        Assert.True(connection.Disposed);
+    }
+
+    [Fact]
     public async Task MissingIdentity_FailsClosed()
     {
         var sessions = new SessionManager(TestSettings.Create(), new FakeConnector(), new ManualClock());
