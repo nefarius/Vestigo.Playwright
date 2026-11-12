@@ -43,9 +43,10 @@ function New-ListenerPort {
 }
 
 function Write-Settings([string]$state, [int]$port, [string[]]$tokens, [bool]$enabled, [string]$prefix) {
+    # Leave these directories for the plugin to create. An existing directory must already
+    # have a protected ACL, and a normally created child still inherits write access.
     $profiles = Join-Path $state 'profiles'
     $artifacts = Join-Path $state 'artifacts'
-    New-Item -ItemType Directory -Path $profiles, $artifacts -Force | Out-Null
     $settings = @{
         Vestigo = @{
             ListenAddress = '127.0.0.1'
@@ -155,7 +156,8 @@ try {
                 $status = Invoke-Mcp $base $headers 21 'tools/call' @{ name = $statusName[0]; _meta = @{ 'vestigo/sessionId' = $session } }
                 $statusText = if ($status.error) { [string]$status.error.message } else { @($status.result.content | ForEach-Object { $_.text }) -join "`n" }
             }
-            throw "Catalog is missing $expected. Present: $($names -join ', '). Status: $statusText"
+            if ($statusText) { throw "Catalog is missing $expected. $statusText" }
+            throw "Catalog is missing $expected. Present: $($names -join ', ')."
         }
     }
     if ($names | Where-Object { $_ -like 'playwright_playwright_*' }) { throw 'The host prefix was applied twice.' }

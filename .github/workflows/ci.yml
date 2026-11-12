@@ -91,8 +91,8 @@ jobs:
           $sources = @{
             playwright = 'src/Vestigo.Playwright/packages.lock.json'
             tests = 'tests/Vestigo.Playwright.Tests/packages.lock.json'
-            fake-backend = 'tests/Vestigo.Playwright.FakeBackend/packages.lock.json'
-            setup-core = 'installer/Vestigo.Playwright.Setup.Core/packages.lock.json'
+            'fake-backend' = 'tests/Vestigo.Playwright.FakeBackend/packages.lock.json'
+            'setup-core' = 'installer/Vestigo.Playwright.Setup.Core/packages.lock.json'
           }
           foreach ($name in $sources.Keys) {
             $directory = Join-Path $destination $name
