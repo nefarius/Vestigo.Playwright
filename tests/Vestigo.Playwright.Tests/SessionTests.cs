@@ -313,6 +313,38 @@ public sealed class SessionTests
     }
 
     [Fact]
+    public async Task CapacityNote_RemainsWhenRetainedLossesFillTheCap()
+    {
+        var connector = new FakeConnector();
+        connector.Factory = (_, _) => Task.FromResult<IUpstreamConnection>(new FakeConnection { Call = (_, _) => throw new IOException("down") });
+        PlaywrightSettings settings = TestSettings.Create(sessions: 1);
+        var sessions = new SessionManager(settings, connector, new ManualClock());
+        var provider = TestSettings.Provider(sessions, settings);
+        PluginSessionIdentity firstLoss = TestSettings.Identity("owner-loss", $"session-{0:x16}");
+        for (int index = 0; index < SessionManager.MaxFailureNotes; index++)
+        {
+            PluginSessionIdentity identity = TestSettings.Identity("owner-loss", $"session-{index:x16}");
+            if (index == 0)
+                firstLoss = identity;
+            var context = new PluginToolContext("owner-loss", identity);
+            await provider.CallToolAsync(new CallToolRequestParams { Name = "browser_navigate" }, context, CancellationToken.None);
+            await provider.ListToolsAsync(context, CancellationToken.None);
+        }
+        Assert.True(sessions.TryGetNote(firstLoss, out _));
+        connector.Factory = (_, _) => Task.FromResult<IUpstreamConnection>(new FakeConnection());
+        PluginSessionIdentity live = TestSettings.Identity("owner-live", "session-0123456789abcdef");
+        await using SessionManager.SessionHold hold = await sessions.AcquireAsync(live, CancellationToken.None);
+        PluginSessionIdentity extra = TestSettings.Identity("owner-extra", "session-0123456789abcdef");
+        PlaywrightException capacity = await Assert.ThrowsAsync<PlaywrightException>(() => sessions.AcquireAsync(extra, CancellationToken.None));
+        Assert.Equal(PlaywrightCodes.Capacity, capacity.Code);
+        sessions.Note(extra, capacity);
+        Assert.True(sessions.TryGetNote(extra, out PlaywrightException? noted));
+        Assert.Equal(PlaywrightCodes.Capacity, noted!.Code);
+        Assert.Equal(capacity.Message, noted.Message);
+        Assert.True(sessions.TryGetNote(firstLoss, out _));
+    }
+
+    [Fact]
     public async Task MissingIdentity_FailsClosed()
     {
         var sessions = new SessionManager(TestSettings.Create(), new FakeConnector(), new ManualClock());

@@ -59,8 +59,9 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
     {
         lock (_gate)
         {
-            _notes[LossKey(identity)] = new FailureNote(exception, _clock.UtcNow);
-            TrimNotes();
+            SessionKey key = LossKey(identity);
+            _notes[key] = new FailureNote(exception, _clock.UtcNow);
+            TrimNotes(key);
         }
     }
 
@@ -395,18 +396,23 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
 
     private static SessionKey LossKey(PluginSessionIdentity identity) => new(identity.OwnerId, identity.SessionId);
 
-    private void TrimNotes()
+    private void TrimNotes(SessionKey? preserve = null)
     {
         DateTimeOffset now = _clock.UtcNow;
         foreach ((SessionKey key, FailureNote note) in _notes.ToArray())
         {
+            if (preserve is { } kept && key.Equals(kept))
+                continue;
             if (!IsNoteRetained(key) && now - note.RecordedUtc >= _settings.IdleTimeout)
                 _notes.Remove(key);
         }
         if (_notes.Count <= MaxFailureNotes)
             return;
+        SessionKey? keep = preserve is { } candidate && _notes.ContainsKey(candidate) && !IsNoteRetained(candidate)
+            ? candidate
+            : NewestUnretained();
         foreach (SessionKey key in _notes
-            .Where(pair => !IsNoteRetained(pair.Key))
+            .Where(pair => !IsNoteRetained(pair.Key) && (keep is null || !pair.Key.Equals(keep.Value)))
             .OrderBy(pair => pair.Value.RecordedUtc)
             .Select(pair => pair.Key)
             .ToArray())
@@ -415,6 +421,23 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
                 break;
             _notes.Remove(key);
         }
+    }
+
+    private SessionKey? NewestUnretained()
+    {
+        SessionKey? newest = null;
+        DateTimeOffset newestUtc = DateTimeOffset.MinValue;
+        foreach ((SessionKey key, FailureNote note) in _notes)
+        {
+            if (IsNoteRetained(key))
+                continue;
+            if (newest is null || note.RecordedUtc >= newestUtc)
+            {
+                newest = key;
+                newestUtc = note.RecordedUtc;
+            }
+        }
+        return newest;
     }
 
     private bool IsNoteRetained(SessionKey key)
