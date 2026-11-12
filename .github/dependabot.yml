@@ -1,0 +1,16 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Vestigo.Abstractions 1.1.0 is packed from the Vestigo commit pinned in CI, not from NuGet.org.
+      - dependency-name: Vestigo.Abstractions
+      # Reserved for the installer. Keep it ignored until that project has a tested WiX/WixSharp set.
+      - dependency-name: WixSharp_wix4
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

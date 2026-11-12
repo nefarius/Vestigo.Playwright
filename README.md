@@ -1,5 +1,7 @@
 # Vestigo.Playwright
 
+[![CI](https://github.com/nefarius/Vestigo.Playwright/actions/workflows/ci.yml/badge.svg)](https://github.com/nefarius/Vestigo.Playwright/actions/workflows/ci.yml)
+
 Optional Vestigo plugin that forwards the official `@playwright/mcp` tools through Vestigo's authenticated `/mcp` endpoint. Playwright, Node.js, the browser, and the upstream MCP connection stay in this plugin. They are not part of Vestigo.
 
 The module name is `Playwright`. It is disabled until an administrator enables it. Tool names use the prefix `playwright_` unless `Prefix` is changed. The host applies that prefix, authentication, and registration.
@@ -51,6 +53,8 @@ The same Vestigo bearer token plus the same session ID is the same browser. A di
 `dotnet test` covers settings rejection, session isolation, cancellation, tombstones, catalog forwarding, and a stdio round trip through the fake MCP backend. `tests/Test-PublishedHost.ps1` starts a published Vestigo host and checks discovery, calls, images, upstream tool errors, owner and session isolation, a disabled module, and a prefix collision.
 
 Those tests use a fake backend. They do not prove a visible Chrome or Edge window, a Windows service desktop, or attachment to an existing browser. An opt-in smoke test against the pinned official backend is still separate; headless execution would not prove the interactive desktop either.
+
+GitHub Actions runs the same checks on Windows. It packs `Vestigo.Abstractions` 1.1.0 from the Vestigo commit pinned in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), publishes this plugin and the fake backend, publishes that host, and runs `tests/Test-PublishedHost.ps1`. The workflow also runs secret scanning and dependency checks. MSI installation, the bootstrapper, and a real Chrome, Edge, or `@playwright/mcp` session remain separate checks.
 
 The Windows Installer package and bootstrapper are not built yet. [docs/installer.md](docs/installer.md) records the setup rules that already have tests.
 

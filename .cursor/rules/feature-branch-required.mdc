@@ -1,0 +1,20 @@
+---
+description: Require a feature branch and pull request for plugin repository changes
+alwaysApply: true
+---
+
+# Feature branch required
+
+Do not implement or commit work on `master`.
+
+- Before the first edit, run `git status --short` and `git branch --show-current`.
+- Continue on the current branch only when it already belongs to the requested work.
+- Otherwise create a `feat/…`, `fix/…`, or `chore/…` branch from current `master`.
+- If the worktree is dirty, stop and ask before switching or creating a branch. Do not stash, discard, or carry unrelated changes.
+- Review the branch and staged diff before committing. Do not merge or push to `master` unless the user explicitly asks.
+- Deliver new work through a pull request.
+
+```powershell
+git status --short
+git switch -c feat/session-cleanup
+```
