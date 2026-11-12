@@ -88,12 +88,20 @@ jobs:
             dotnet restore $project --no-dependencies -p:RestorePackagesWithLockFile=true
           }
           $destination = 'artifacts/osv-lockfiles'
-          New-Item -ItemType Directory -Force -Path $destination | Out-Null
-          Copy-Item 'src/Vestigo.Playwright/packages.lock.json' "$destination/Vestigo.Playwright.packages.lock.json"
-          Copy-Item 'tests/Vestigo.Playwright.Tests/packages.lock.json' "$destination/Vestigo.Playwright.Tests.packages.lock.json"
-          Copy-Item 'tests/Vestigo.Playwright.FakeBackend/packages.lock.json' "$destination/Vestigo.Playwright.FakeBackend.packages.lock.json"
-          Copy-Item 'installer/Vestigo.Playwright.Setup.Core/packages.lock.json' "$destination/Vestigo.Playwright.Setup.Core.packages.lock.json"
-          if ((Get-ChildItem -LiteralPath $destination -File).Count -ne 4) { throw 'Expected four NuGet lock files.' }
+          $sources = @{
+            playwright = 'src/Vestigo.Playwright/packages.lock.json'
+            tests = 'tests/Vestigo.Playwright.Tests/packages.lock.json'
+            fake-backend = 'tests/Vestigo.Playwright.FakeBackend/packages.lock.json'
+            setup-core = 'installer/Vestigo.Playwright.Setup.Core/packages.lock.json'
+          }
+          foreach ($name in $sources.Keys) {
+            $directory = Join-Path $destination $name
+            New-Item -ItemType Directory -Force -Path $directory | Out-Null
+            Copy-Item -LiteralPath $sources[$name] -Destination (Join-Path $directory 'packages.lock.json')
+          }
+          if ((Get-ChildItem -LiteralPath $destination -Recurse -Filter 'packages.lock.json' -File).Count -ne 4) {
+            throw 'Expected four NuGet lock files.'
+          }
 
       - name: Upload lock files
         uses: actions/upload-artifact@v7

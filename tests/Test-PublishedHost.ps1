@@ -148,7 +148,15 @@ try {
     if ($listed.error) { throw "tools/list failed: $($listed.error.message)" }
     $names = @($listed.result.tools | ForEach-Object { $_.name })
     foreach ($expected in @('playwright_browser_navigate', 'playwright_browser_snapshot', 'playwright_browser_click', 'playwright_browser_take_screenshot', 'list_jobs')) {
-        if ($names -notcontains $expected) { throw "Catalog is missing $expected." }
+        if ($names -notcontains $expected) {
+            $statusName = @($names | Where-Object { $_ -like '*backend_status' } | Select-Object -First 1)
+            $statusText = ''
+            if ($statusName.Count -eq 1) {
+                $status = Invoke-Mcp $base $headers 21 'tools/call' @{ name = $statusName[0]; _meta = @{ 'vestigo/sessionId' = $session } }
+                $statusText = if ($status.error) { [string]$status.error.message } else { @($status.result.content | ForEach-Object { $_.text }) -join "`n" }
+            }
+            throw "Catalog is missing $expected. Present: $($names -join ', '). Status: $statusText"
+        }
     }
     if ($names | Where-Object { $_ -like 'playwright_playwright_*' }) { throw 'The host prefix was applied twice.' }
 
