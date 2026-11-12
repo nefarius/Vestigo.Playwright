@@ -1,0 +1,7 @@
+{
+  "id": "playwright",
+  "version": "1.0.0",
+  "hostApiVersion": "1.1",
+  "entryAssembly": "Vestigo.Playwright.dll",
+  "entryType": "Vestigo.Playwright.Plugin"
+}
