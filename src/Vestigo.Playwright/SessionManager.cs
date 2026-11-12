@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 
+using Microsoft.Extensions.Logging;
+
 using ModelContextProtocol.Protocol;
 
 using Vestigo.Extensibility;
@@ -28,15 +30,17 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
     private readonly PlaywrightSettings _settings;
     private readonly IUpstreamConnector _connector;
     private readonly IClock _clock;
+    private readonly ILogger? _logger;
     private int _waiting;
     private int _disposed;
     private bool _shuttingDown;
 
-    public SessionManager(PlaywrightSettings settings, IUpstreamConnector connector, IClock clock)
+    public SessionManager(PlaywrightSettings settings, IUpstreamConnector connector, IClock clock, ILogger<SessionManager>? logger = null)
     {
         _settings = settings;
         _connector = connector;
         _clock = clock;
+        _logger = logger;
         _startups = new SemaphoreSlim(settings.MaxConcurrentStartups, settings.MaxConcurrentStartups);
     }
 
@@ -48,7 +52,7 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
     public bool TryGetLoss(PluginSessionIdentity identity, out LossRecord? loss)
     {
         lock (_gate)
-            return _losses.TryGetValue(KeyFor(identity), out loss);
+            return _losses.TryGetValue(LossKey(identity), out loss);
     }
 
     public void Note(PluginSessionIdentity identity, PlaywrightException exception)
@@ -79,7 +83,7 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
         {
             if (_shuttingDown)
                 throw new PlaywrightException(PlaywrightCodes.ShuttingDown, "Playwright is shutting down.");
-            if (_losses.TryGetValue(key, out LossRecord? loss) && loss is not null)
+            if (_losses.TryGetValue(LossKey(identity), out LossRecord? loss) && loss is not null)
                 throw new PlaywrightException(loss.Code, loss.Message, sessionLost: true);
             if (!_slots.TryGetValue(key, out slot!))
             {
@@ -132,7 +136,7 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
             {
                 if (_shuttingDown)
                     throw new PlaywrightException(PlaywrightCodes.ShuttingDown, "Playwright is shutting down.");
-                _losses.TryGetValue(key, out LossRecord? lost);
+                _losses.TryGetValue(LossKey(identity), out LossRecord? lost);
                 if (lost is not null || !ReferenceEquals(slot.Connection, connection))
                     throw new PlaywrightException(lost?.Code ?? PlaywrightCodes.SessionLost, lost?.Message ?? "The Playwright session is no longer available.", sessionLost: true);
                 slot.Operations++;
@@ -146,7 +150,7 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
             slot.Operation.Release();
             throw;
         }
-        return new SessionHold(this, key, slot, connection);
+        return new SessionHold(this, slot, connection, identity);
     }
 
     public async Task ExpireIdleAsync(CancellationToken cancellationToken)
@@ -168,7 +172,8 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
                     if (slot.Operations != 0 || slot.Connection is null)
                         continue;
                     expired.Add(slot);
-                    _losses[key] = new LossRecord(PlaywrightCodes.SessionExpired, "The Playwright session expired. Choose a new application session ID.", slot.Catalog);
+                    if (slot.Identity is { } expiredIdentity)
+                        _losses[LossKey(expiredIdentity)] = new LossRecord(PlaywrightCodes.SessionExpired, "The Playwright session expired. Choose a new application session ID.", slot.Catalog);
                     _slots.Remove(key);
                     slot.Connection = null;
                 }
@@ -180,12 +185,25 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
         }
         foreach (SessionSlot slot in expired)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (slot.Connected is not null)
-                await slot.Connected.DisposeAsync().ConfigureAwait(false);
-            if (slot.Identity is { } knownIdentity)
-                _connector.Release(knownIdentity);
+            try
+            {
+                if (slot.Connected is not null)
+                    await slot.Connected.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                _logger?.LogWarning("Playwright idle cleanup failed for one session: {Detail}", exception.GetType().Name);
+            }
+            finally
+            {
+                if (slot.Identity is { } knownIdentity)
+                    _connector.Release(knownIdentity);
+            }
         }
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     public async Task ShutdownAsync(CancellationToken cancellationToken)
@@ -229,14 +247,16 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
 
     private async Task<IUpstreamConnection> ConnectAsync(SessionKey key, PluginSessionIdentity identity, SessionSlot slot, CancellationToken cancellationToken)
     {
-        await _startups.WaitAsync(cancellationToken).ConfigureAwait(false);
+        bool acquired = false;
         try
         {
+            await _startups.WaitAsync(cancellationToken).ConfigureAwait(false);
+            acquired = true;
             cancellationToken.ThrowIfCancellationRequested();
             IUpstreamConnection connection = await _connector.ConnectAsync(identity, cancellationToken).ConfigureAwait(false);
             lock (_gate)
             {
-                if (_shuttingDown || _losses.ContainsKey(key))
+                if (_shuttingDown || _losses.ContainsKey(LossKey(identity)))
                 {
                     _ = connection.DisposeAsync();
                     throw new PlaywrightException(PlaywrightCodes.ShuttingDown, "Playwright is shutting down.");
@@ -249,19 +269,15 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
             }
             return connection;
         }
-            catch
-            {
-                lock (_gate)
-                {
-                    slot.Connecting = null;
-                    if (slot.Connection is null)
-                        _slots.Remove(key);
-                }
-                throw;
-            }
+        catch
+        {
+            DetachSlot(key, slot);
+            throw;
+        }
         finally
         {
-            _startups.Release();
+            if (acquired)
+                _startups.Release();
         }
     }
 
@@ -276,9 +292,25 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
                 if (slot.Connecting is { } pending)
                     _ = pending.ContinueWith(static task => _ = task.Exception, TaskContinuationOptions.OnlyOnFaulted);
                 if (slot.Connecting is null)
-                    _slots.Remove(key);
+                    RemoveSlotIfCurrent(key, slot);
             }
         }
+    }
+
+    private void DetachSlot(SessionKey key, SessionSlot slot)
+    {
+        lock (_gate)
+        {
+            slot.Connecting = null;
+            if (slot.Connection is null)
+                RemoveSlotIfCurrent(key, slot);
+        }
+    }
+
+    private void RemoveSlotIfCurrent(SessionKey key, SessionSlot slot)
+    {
+        if (_slots.TryGetValue(key, out SessionSlot? current) && ReferenceEquals(current, slot))
+            _slots.Remove(key);
     }
 
     private async Task EnterOperationAsync(SessionSlot slot, CancellationToken cancellationToken)
@@ -300,43 +332,45 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
         }
     }
 
-    private async Task LoseAsync(SessionKey key, SessionSlot slot, string code, string message)
+    private async Task LoseAsync(PluginSessionIdentity identity, SessionSlot slot, string code, string message)
     {
         IUpstreamConnection? connection = null;
-        PluginSessionIdentity? identity = null;
+        PluginSessionIdentity? released = null;
         lock (_gate)
         {
             IReadOnlyList<Tool>? catalog = slot.Catalog;
-            _losses[key] = new LossRecord(code, message, catalog);
-            _slots.Remove(key);
+            _losses[LossKey(identity)] = new LossRecord(code, message, catalog);
+            RemoveSlotIfCurrent(KeyFor(identity), slot);
             connection = slot.Connected;
-            identity = slot.Identity;
+            released = slot.Identity;
             slot.Connection = null;
             slot.Connected = null;
         }
         if (connection is not null)
             await connection.DisposeAsync().ConfigureAwait(false);
-        if (identity is not null)
-            _connector.Release(identity);
+        if (released is not null)
+            _connector.Release(released);
     }
 
     private SessionKey KeyFor(PluginSessionIdentity identity) =>
-        _settings.ShareBrowser ? new SessionKey("*", "*") : new SessionKey(identity.OwnerId, identity.SessionId);
+        _settings.ShareBrowser ? new SessionKey("*", "*") : LossKey(identity);
+
+    private static SessionKey LossKey(PluginSessionIdentity identity) => new(identity.OwnerId, identity.SessionId);
 
     internal sealed class SessionHold : IAsyncDisposable
     {
         private readonly SessionManager _manager;
-        private readonly SessionKey _key;
         private readonly SessionSlot _slot;
         private readonly IUpstreamConnection _connection;
+        private readonly PluginSessionIdentity _identity;
         private int _disposed;
 
-        internal SessionHold(SessionManager manager, SessionKey key, SessionSlot slot, IUpstreamConnection connection)
+        internal SessionHold(SessionManager manager, SessionSlot slot, IUpstreamConnection connection, PluginSessionIdentity identity)
         {
             _manager = manager;
-            _key = key;
             _slot = slot;
             _connection = connection;
+            _identity = identity;
         }
 
         public async Task<IReadOnlyList<Tool>> ListAsync(CancellationToken cancellationToken)
@@ -410,7 +444,7 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
             await Task.CompletedTask;
         }
 
-        private Task Fail(string code, string message) => _manager.LoseAsync(_key, _slot, code, message);
+        private Task Fail(string code, string message) => _manager.LoseAsync(_identity, _slot, code, message);
     }
 
     internal sealed class SessionSlot

@@ -113,9 +113,9 @@ internal sealed record PlaywrightSettings
             headers = ReadHeaders(configuration.GetSection("ExternalHeaders"));
             bool loopback = external.IsLoopback;
             if (!loopback && headers.Count == 0)
-                throw new PlaywrightException(PlaywrightCodes.Configuration, "A remote Playwright endpoint requires an administrator-configured credential header.");
+                throw new PlaywrightException(PlaywrightCodes.Configuration, "A remote Playwright endpoint requires an administrator-configured request header. This check only tests that a header is present, not that it is a credential. The Playwright MCP backend must enforce its own authentication.");
             if (loopback && headers.Count == 0 && !ReadBool(configuration, "AllowUnauthenticatedLoopback", false))
-                throw new PlaywrightException(PlaywrightCodes.Configuration, "Loopback binding does not authenticate local callers. Configure an upstream credential header, or set AllowUnauthenticatedLoopback for a protected local deployment.");
+                throw new PlaywrightException(PlaywrightCodes.Configuration, "Loopback binding does not authenticate local callers. Configure an upstream request header, which is not verified as a credential here, or set AllowUnauthenticatedLoopback for a protected local deployment. The Playwright MCP backend must enforce its own authentication.");
             if (isolation == ExternalIsolation.PerSession && share)
                 throw new PlaywrightException(PlaywrightCodes.Configuration, "ShareBrowser cannot be combined with per-session external isolation.");
         }
@@ -201,7 +201,7 @@ internal sealed record PlaywrightSettings
 
     private static string AbsoluteRoot(string path, string contentDirectory, string name)
     {
-        if (!Path.IsPathRooted(path))
+        if (!Path.IsPathFullyQualified(path))
             throw new PlaywrightException(PlaywrightCodes.Configuration, name + " must be an absolute path.");
         string full = Path.GetFullPath(path);
         if (IsInside(full, contentDirectory))
@@ -213,7 +213,7 @@ internal sealed record PlaywrightSettings
 
     private static string AbsoluteFile(string path, string contentDirectory)
     {
-        if (!Path.IsPathRooted(path))
+        if (!Path.IsPathFullyQualified(path))
             throw new PlaywrightException(PlaywrightCodes.Configuration, "ExecutablePath must be an absolute path.");
         string full = Path.GetFullPath(path);
         if (IsInside(full, contentDirectory))

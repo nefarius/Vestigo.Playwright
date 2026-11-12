@@ -50,6 +50,28 @@ public sealed class SetupCoreTests
     }
 
     [Fact]
+    public void Merge_ReplacesExistingKeysWithoutChangingTheirCase()
+    {
+        const string original = """
+            {
+              "vestigo": {
+                "plugins": { "enabled": false, "trustMode": "AdministratorManaged" },
+                "modules": { "playwright": { "browser": "msedge", "enabled": false } }
+              }
+            }
+            """;
+        MergeResult merged = SettingsMerge.Merge(original, Activation.EnableLoadingAndModule);
+        JsonObject vestigo = Assert.IsType<JsonObject>(JsonNode.Parse(merged.Json)!["vestigo"]);
+        Assert.Null(vestigo["Plugins"]);
+        Assert.Null(vestigo["Modules"]);
+        Assert.True(vestigo["plugins"]!["enabled"]!.GetValue<bool>());
+        Assert.Equal("AdministratorManaged", vestigo["plugins"]!["trustMode"]!.GetValue<string>());
+        Assert.Equal("msedge", vestigo["modules"]!["playwright"]!["browser"]!.GetValue<string>());
+        Assert.True(vestigo["modules"]!["playwright"]!["enabled"]!.GetValue<bool>());
+        Assert.Null(vestigo["modules"]!["Playwright"]);
+    }
+
+    [Fact]
     public void Prerequisites_AllowExternalModeWithoutALocalBrowser()
     {
         Assert.Equal(ExitCodes.Success, Prerequisites.Requirement(vestigoFound: true, externalOnly: true, nodeFound: false, browserFound: false));

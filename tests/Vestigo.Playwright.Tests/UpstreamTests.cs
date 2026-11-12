@@ -23,7 +23,8 @@ public sealed class PluginShapeTests
         Assert.False(module.EnabledByDefault);
         var services = new ServiceCollection();
         services.AddLogging();
-        module.ConfigureServices(services, new PluginContext(TestSettings.Config(SettingsTestsAccess.Managed()), @"C:\plugin\content", AuthenticationEnabled: true));
+        string content = OperatingSystem.IsWindows() ? @"C:\plugin\content" : "/tmp/content";
+        module.ConfigureServices(services, new PluginContext(TestSettings.Config(SettingsTestsAccess.Managed()), content, AuthenticationEnabled: true));
         await using ServiceProvider provider = services.BuildServiceProvider();
         IVestigoToolProvider tools = Assert.Single(provider.GetServices<IVestigoToolProvider>());
         Assert.Equal("playwright_", tools.Prefix);
@@ -38,9 +39,9 @@ file static class SettingsTestsAccess
     [
         ("Mode", "Managed"),
         ("Browser", "msedge"),
-        ("ExecutablePath", @"C:\backend\node.exe"),
-        ("ProfilesRoot", @"C:\state\profiles"),
-        ("ArtifactsRoot", @"C:\state\artifacts")
+        ("ExecutablePath", OperatingSystem.IsWindows() ? @"C:\backend\node.exe" : "/usr/bin/node"),
+        ("ProfilesRoot", OperatingSystem.IsWindows() ? @"C:\state\profiles" : "/tmp/profiles"),
+        ("ArtifactsRoot", OperatingSystem.IsWindows() ? @"C:\state\artifacts" : "/tmp/artifacts")
     ];
 }
 
@@ -51,7 +52,9 @@ public sealed class UpstreamRoundTripTests
     {
         string dll = typeof(FakeBackend.Program).Assembly.Location;
         string dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH")
-            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe");
+            ?? (OperatingSystem.IsWindows()
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe")
+                : "/usr/share/dotnet/dotnet");
         using var profiles = new TempDirectory();
         using var artifacts = new TempDirectory();
         var settings = TestSettings.Create() with
@@ -106,7 +109,6 @@ public sealed class UpstreamRoundTripTests
         public TempDirectory()
         {
             Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vestigo-playwright-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(Path);
         }
 
         public string Path { get; }

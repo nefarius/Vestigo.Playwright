@@ -84,24 +84,32 @@ internal sealed class McpUpstreamConnector : IUpstreamConnector
     private async Task<IUpstreamConnection> ConnectExternalAsync(string artifacts, CancellationToken cancellationToken)
     {
         var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
-        var http = new HttpClient(handler, disposeHandler: false);
-        var options = new HttpClientTransportOptions
+        var http = new HttpClient(handler, disposeHandler: true);
+        try
         {
-            Endpoint = _settings.ExternalEndpoint!,
-            TransportMode = _settings.ExternalTransport switch
+            var options = new HttpClientTransportOptions
             {
-                ExternalTransportKind.Sse => HttpTransportMode.Sse,
-                ExternalTransportKind.Auto => HttpTransportMode.AutoDetect,
-                _ => HttpTransportMode.StreamableHttp
-            },
-            AdditionalHeaders = new Dictionary<string, string>(_settings.ExternalHeaders, StringComparer.OrdinalIgnoreCase),
-            ConnectionTimeout = _settings.ConnectionTimeout,
-            Name = "vestigo-playwright"
-        };
-        var transport = new HttpClientTransport(options, http, _loggerFactory, ownsHttpClient: true);
-        McpClient client = await CreateClientAsync(transport, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Connected an external Playwright session.");
-        return new ClientConnection(client, http: null, artifacts, persistentLock: null, deleteArtifacts: false);
+                Endpoint = _settings.ExternalEndpoint!,
+                TransportMode = _settings.ExternalTransport switch
+                {
+                    ExternalTransportKind.Sse => HttpTransportMode.Sse,
+                    ExternalTransportKind.Auto => HttpTransportMode.AutoDetect,
+                    _ => HttpTransportMode.StreamableHttp
+                },
+                AdditionalHeaders = new Dictionary<string, string>(_settings.ExternalHeaders, StringComparer.OrdinalIgnoreCase),
+                ConnectionTimeout = _settings.ConnectionTimeout,
+                Name = "vestigo-playwright"
+            };
+            var transport = new HttpClientTransport(options, http, _loggerFactory, ownsHttpClient: false);
+            McpClient client = await CreateClientAsync(transport, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Connected an external Playwright session.");
+            return new ClientConnection(client, http, artifacts, persistentLock: null, deleteArtifacts: false);
+        }
+        catch
+        {
+            http.Dispose();
+            throw;
+        }
     }
 
     private async Task<IUpstreamConnection> ConnectManagedAsync(string artifacts, string leaf, CancellationToken cancellationToken)
@@ -133,20 +141,28 @@ internal sealed class McpUpstreamConnector : IUpstreamConnector
                     await process.WaitForPortAsync(httpPort, _settings.StartupTimeout, cancellationToken).ConfigureAwait(false);
                     var endpoint = new Uri($"http://127.0.0.1:{httpPort}/mcp");
                     var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
-                    var http = new HttpClient(handler, disposeHandler: false);
-                    var transport = new HttpClientTransport(new HttpClientTransportOptions
+                    var http = new HttpClient(handler, disposeHandler: true);
+                    try
                     {
-                        Endpoint = endpoint,
-                        TransportMode = HttpTransportMode.StreamableHttp,
-                        ConnectionTimeout = _settings.ConnectionTimeout,
-                        Name = "vestigo-playwright-managed"
-                    }, http, _loggerFactory, ownsHttpClient: true);
-                    McpClient client = await CreateClientAsync(transport, cancellationToken).ConfigureAwait(false);
-                    return new ClientConnection(client, process, http: null, artifacts, profileLock, deleteArtifacts: _settings.ProfileMode == ProfileMode.Ephemeral);
+                        var transport = new HttpClientTransport(new HttpClientTransportOptions
+                        {
+                            Endpoint = endpoint,
+                            TransportMode = HttpTransportMode.StreamableHttp,
+                            ConnectionTimeout = _settings.ConnectionTimeout,
+                            Name = "vestigo-playwright-managed"
+                        }, http, _loggerFactory, ownsHttpClient: false);
+                        McpClient client = await CreateClientAsync(transport, cancellationToken).ConfigureAwait(false);
+                        return new ClientConnection(client, process, http, artifacts, profileLock, deleteArtifacts: _settings.ProfileMode == ProfileMode.Ephemeral);
+                    }
+                    catch
+                    {
+                        http.Dispose();
+                        throw;
+                    }
                 }
                 var stdio = new StreamClientTransport(process.StandardInput, process.StandardOutput, _loggerFactory);
                 McpClient stdioClient = await CreateClientAsync(stdio, cancellationToken).ConfigureAwait(false);
-                return new ClientConnection(stdioClient, process, http: null, artifacts, profileLock, deleteArtifacts: _settings.ProfileMode == ProfileMode.Ephemeral && _settings.Attach == AttachMode.None);
+                return new ClientConnection(stdioClient, process, http: null, artifacts, profileLock, deleteArtifacts: _settings.ProfileMode == ProfileMode.Ephemeral);
             }
             catch
             {

@@ -8,7 +8,7 @@ Every valid Vestigo API token can call every enabled plugin tool. This plugin ad
 
 `ExternalHeaders` are the only credentials sent to Playwright MCP. The plugin never forwards the caller's Vestigo bearer token and never uses a caller-supplied endpoint. Header values of four or more characters are treated as secrets: they are removed from diagnostic text and must not appear in tool results.
 
-Remote endpoints need HTTPS, unless `AllowInsecureRemote` is an explicit deployment choice, and they need a credential header. Loopback without a credential header is rejected unless `AllowUnauthenticatedLoopback` is set. Another local user can otherwise connect to that endpoint. Managed HTTP has the same loopback exposure and no upstream authentication; stdio does not listen.
+Remote endpoints need HTTPS, unless `AllowInsecureRemote` is an explicit deployment choice, and they need at least one configured request header. The plugin does not check that the header is a credential; the Playwright MCP backend has to enforce authentication. Loopback without a header is rejected unless `AllowUnauthenticatedLoopback` is set. Another local user can otherwise connect to that endpoint. Managed HTTP has the same loopback exposure and no upstream authentication; stdio does not listen.
 
 ## Browser and files
 

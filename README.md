@@ -22,7 +22,7 @@ dotnet publish src\Vestigo.Playwright\Vestigo.Playwright.csproj -c Release -o ar
 
 Publish removes the shared host assemblies (`Vestigo.Abstractions`, `ModelContextProtocol*`, `Microsoft.Extensions.AI.Abstractions`). The host loads those from its own directory. Do not trim or single-file publish the plugin.
 
-Contracts are consumed from `artifacts/contracts` when that folder contains `Vestigo.Abstractions.1.1.0.nupkg`. Pack them from a Vestigo checkout only when the package is not already there:
+When `artifacts/contracts` exists, restore adds it as a package source. A fresh checkout does not need that folder to exist. Pack the contracts from a Vestigo checkout into it when `Vestigo.Abstractions` 1.1.0 is not on NuGet.org:
 
 ```powershell
 dotnet pack <vestigo>\server\Vestigo.Abstractions\Vestigo.Abstractions.csproj -c Release -o artifacts\contracts

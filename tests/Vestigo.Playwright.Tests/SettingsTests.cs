@@ -95,9 +95,9 @@ public sealed class SettingsTests
     [
         ("Mode", "Managed"),
         ("Browser", "msedge"),
-        ("ExecutablePath", @"C:\backend\node.exe"),
-        ("ProfilesRoot", @"C:\state\profiles"),
-        ("ArtifactsRoot", @"C:\state\artifacts"),
+        ("ExecutablePath", OperatingSystem.IsWindows() ? @"C:\backend\node.exe" : "/usr/bin/node"),
+        ("ProfilesRoot", OperatingSystem.IsWindows() ? @"C:\state\profiles" : "/tmp/profiles"),
+        ("ArtifactsRoot", OperatingSystem.IsWindows() ? @"C:\state\artifacts" : "/tmp/artifacts"),
         .. extra
     ];
 }

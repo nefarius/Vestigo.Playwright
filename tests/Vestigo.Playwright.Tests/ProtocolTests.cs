@@ -28,6 +28,18 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public async Task Catalog_RejectsTooManyToolsAndOversizedDescriptors()
+    {
+        Tool[] many = Enumerable.Range(0, ToolCatalog.MaxTools + 1).Select(index => ToolFactory.Named("tool_" + index)).ToArray();
+        PlaywrightException count = await Assert.ThrowsAsync<PlaywrightException>(() => ToolCatalog.AggregateAsync((_, _) => Task.FromResult(new ListToolsResult { Tools = many }), CancellationToken.None));
+        Assert.Contains("tool limit", count.Message);
+        var huge = ToolFactory.Named("browser_navigate");
+        huge.Description = new string('x', ToolCatalog.MaxDescriptorBytes + 1);
+        PlaywrightException size = await Assert.ThrowsAsync<PlaywrightException>(() => ToolCatalog.AggregateAsync((_, _) => Task.FromResult(new ListToolsResult { Tools = [huge] }), CancellationToken.None));
+        Assert.Contains("descriptor size", size.Message);
+    }
+
+    [Fact]
     public void Forwarder_DropsProgressAndHostSessionMetadata()
     {
         var request = new CallToolRequestParams

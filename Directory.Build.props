@@ -5,5 +5,6 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+    <RestoreAdditionalProjectSources Condition="Exists('$(MSBuildThisFileDirectory)artifacts\contracts')">$(MSBuildThisFileDirectory)artifacts\contracts</RestoreAdditionalProjectSources>
   </PropertyGroup>
 </Project>

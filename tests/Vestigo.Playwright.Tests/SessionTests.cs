@@ -96,6 +96,36 @@ public sealed class SessionTests
         connecting.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
         release.TrySetResult();
+        connector.Factory = (_, _) => Task.FromResult<IUpstreamConnection>(new FakeConnection());
+        await using (SessionManager.SessionHold recovered = await sessions.AcquireAsync(identity, CancellationToken.None))
+            Assert.False(sessions.TryGetLoss(identity, out _));
+
+        var blocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var blockerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var saturatedConnector = new FakeConnector
+        {
+            Factory = async (candidate, token) =>
+            {
+                if (candidate.OwnerId == "owner-hold")
+                {
+                    blockerEntered.TrySetResult();
+                    await blocker.Task;
+                    return new FakeConnection();
+                }
+                token.ThrowIfCancellationRequested();
+                return new FakeConnection();
+            }
+        };
+        var saturated = new SessionManager(TestSettings.Create() with { MaxConcurrentStartups = 1, StartupTimeout = TimeSpan.FromMilliseconds(300) }, saturatedConnector, new ManualClock());
+        PluginSessionIdentity holdIdentity = TestSettings.Identity("owner-hold", "session-hold-0123456789");
+        Task<SessionManager.SessionHold> holding = saturated.AcquireAsync(holdIdentity, CancellationToken.None);
+        await blockerEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => saturated.AcquireAsync(identity, CancellationToken.None));
+        blocker.TrySetResult();
+        await using (SessionManager.SessionHold held = await holding)
+            await held.DisposeAsync();
+        await using (SessionManager.SessionHold retried = await saturated.AcquireAsync(identity, CancellationToken.None))
+            Assert.False(saturated.TryGetLoss(identity, out _));
 
         var connection = new FakeConnection();
         var callGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -127,7 +157,7 @@ public sealed class SessionTests
             throw new IOException("backend secret exploded");
         };
         connector.Factory = (_, _) => Task.FromResult<IUpstreamConnection>(connection);
-        var sessions = new SessionManager(TestSettings.Create(), connector, new ManualClock());
+        var sessions = new SessionManager(TestSettings.Create() with { CallTimeout = TimeSpan.FromMilliseconds(100) }, connector, new ManualClock());
         var provider = TestSettings.Provider(sessions);
         PluginSessionIdentity identity = TestSettings.Identity("owner-a", "session-0123456789abcdef");
         var context = new PluginToolContext("owner-a", identity);
@@ -140,6 +170,29 @@ public sealed class SessionTests
         Assert.Equal(1, connector.Connects);
         Assert.Equal(1, calls);
         Assert.True(connection.Disposed);
+
+        var slow = new FakeConnection
+        {
+            Call = async (_, token) =>
+            {
+                await Task.Delay(Timeout.Infinite, token);
+                return new CallToolResult { Content = [new TextContentBlock { Text = "late" }] };
+            }
+        };
+        var slowCalls = 0;
+        connector.Factory = (_, _) =>
+        {
+            slowCalls++;
+            return Task.FromResult<IUpstreamConnection>(slow);
+        };
+        PluginSessionIdentity timed = TestSettings.Identity("owner-a", "session-timeout-0123456789");
+        var timedContext = new PluginToolContext("owner-a", timed);
+        CallToolResult timedOut = await provider.CallToolAsync(new CallToolRequestParams { Name = "browser_navigate" }, timedContext, CancellationToken.None);
+        Assert.Contains(PlaywrightCodes.Timeout, Text(timedOut));
+        CallToolResult notReplayed = await provider.CallToolAsync(new CallToolRequestParams { Name = "browser_navigate" }, timedContext, CancellationToken.None);
+        Assert.Contains(PlaywrightCodes.Timeout, Text(notReplayed));
+        Assert.Equal(1, slowCalls);
+        Assert.True(slow.Disposed);
     }
 
     [Fact]
@@ -163,6 +216,25 @@ public sealed class SessionTests
         PlaywrightException expired = await Assert.ThrowsAsync<PlaywrightException>(() => sessions.AcquireAsync(identity, CancellationToken.None));
         Assert.Equal(PlaywrightCodes.SessionExpired, expired.Code);
         Assert.Equal(1, connector.Connects);
+    }
+
+    [Fact]
+    public async Task SharedBrowser_LossDoesNotBlockAnotherIdentity()
+    {
+        var connector = new FakeConnector();
+        var failing = new FakeConnection { Call = (_, _) => throw new IOException("down") };
+        connector.Factory = (_, _) => Task.FromResult<IUpstreamConnection>(failing);
+        PlaywrightSettings settings = TestSettings.Create(share: true);
+        var sessions = new SessionManager(settings, connector, new ManualClock());
+        var provider = TestSettings.Provider(sessions, settings);
+        PluginSessionIdentity first = TestSettings.Identity("owner-a", "session-0123456789abcdef");
+        PluginSessionIdentity second = TestSettings.Identity("owner-b", "session-0123456789abcdef");
+        CallToolResult lost = await provider.CallToolAsync(new CallToolRequestParams { Name = "browser_navigate" }, new PluginToolContext("owner-a", first), CancellationToken.None);
+        Assert.Contains(PlaywrightCodes.SessionLost, Text(lost));
+        connector.Factory = (_, _) => Task.FromResult<IUpstreamConnection>(new FakeConnection());
+        CallToolResult other = await provider.CallToolAsync(new CallToolRequestParams { Name = "browser_navigate" }, new PluginToolContext("owner-b", second), CancellationToken.None);
+        Assert.True(other.IsError is not true);
+        Assert.Equal(2, connector.Connects);
     }
 
     [Fact]

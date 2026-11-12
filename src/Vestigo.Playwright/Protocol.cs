@@ -8,6 +8,9 @@ namespace Vestigo.Playwright;
 internal static class ToolCatalog
 {
     public const int MaxPages = 50;
+    public const int MaxTools = 128;
+    public const int MaxDescriptorBytes = 64 * 1024;
+    public const int MaxCatalogBytes = 1024 * 1024;
 
     public static async Task<IReadOnlyList<Tool>> AggregateAsync(
         Func<string?, CancellationToken, Task<ListToolsResult>> listPage,
@@ -15,6 +18,7 @@ internal static class ToolCatalog
     {
         var tools = new List<Tool>();
         var names = new HashSet<string>(StringComparer.Ordinal);
+        int catalogBytes = 0;
         string? cursor = null;
         for (int page = 0; page < MaxPages; page++)
         {
@@ -24,8 +28,15 @@ internal static class ToolCatalog
             {
                 foreach (Tool tool in result.Tools)
                 {
-                    if (!string.IsNullOrEmpty(tool.Name) && names.Add(tool.Name))
-                        tools.Add(tool);
+                    if (string.IsNullOrEmpty(tool.Name) || !names.Add(tool.Name))
+                        continue;
+                    if (tools.Count >= MaxTools)
+                        throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog exceeded the tool limit.");
+                    int size = DescriptorBytes(tool);
+                    if (size > MaxDescriptorBytes || catalogBytes > MaxCatalogBytes - size)
+                        throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog exceeded the descriptor size limit.");
+                    catalogBytes += size;
+                    tools.Add(tool);
                 }
             }
             if (string.IsNullOrEmpty(result.NextCursor) || string.Equals(result.NextCursor, cursor, StringComparison.Ordinal))
@@ -33,6 +44,15 @@ internal static class ToolCatalog
             cursor = result.NextCursor;
         }
         throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog exceeded the page limit.");
+    }
+
+    private static int DescriptorBytes(Tool tool)
+    {
+        try { return JsonSerializer.SerializeToUtf8Bytes(tool).Length; }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException)
+        {
+            throw new PlaywrightException(PlaywrightCodes.Unavailable, "The Playwright catalog contained a tool descriptor that could not be measured.");
+        }
     }
 }
 

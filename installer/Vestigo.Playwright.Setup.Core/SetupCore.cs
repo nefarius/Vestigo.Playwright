@@ -60,29 +60,62 @@ public static class SettingsMerge
         JsonObject vestigo = Object(document, "Vestigo");
         if (activation == Activation.EnableLoadingAndModule)
         {
-            if (vestigo["Plugins"] is not JsonObject plugins)
+            if (Find(vestigo, "Plugins") is not JsonObject plugins)
                 return new(appsettingsJson, false, "Plugin trust policy was left unchanged.");
-            string? trust = Text(plugins["TrustMode"]);
+            string? trust = Property(plugins, "TrustMode");
             if (trust is not ("AdministratorManaged" or "PinnedSha256"))
                 return new(appsettingsJson, false, "Plugin trust policy was left unchanged.");
-            plugins["Enabled"] = true;
+            SetFlag(plugins, "Enabled");
         }
 
         JsonObject modules = Object(vestigo, "Modules");
         JsonObject playwright = Object(modules, "Playwright");
-        playwright["Enabled"] = true;
+        SetFlag(playwright, "Enabled");
         return new(document.ToJsonString(Indented), true, null);
     }
 
     private static JsonObject Object(JsonObject parent, string name)
     {
-        if (parent[name] is JsonObject existing)
+        if (Find(parent, name) is JsonObject existing)
             return existing;
-        if (parent[name] is not null)
-            throw new SetupException(ExitCodes.BadArguments, "Host settings contain an unexpected JSON shape.");
         var created = new JsonObject();
         parent[name] = created;
         return created;
+    }
+
+    private static JsonObject? Find(JsonObject parent, string name)
+    {
+        foreach (KeyValuePair<string, JsonNode?> pair in parent)
+        {
+            if (!string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (pair.Value is JsonObject existing)
+                return existing;
+            throw new SetupException(ExitCodes.BadArguments, "Host settings contain an unexpected JSON shape.");
+        }
+        return null;
+    }
+
+    private static void SetFlag(JsonObject parent, string name)
+    {
+        foreach (KeyValuePair<string, JsonNode?> pair in parent)
+        {
+            if (!string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            parent[pair.Key] = true;
+            return;
+        }
+        parent[name] = true;
+    }
+
+    private static string? Property(JsonObject parent, string name)
+    {
+        foreach (KeyValuePair<string, JsonNode?> pair in parent)
+        {
+            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
+                return Text(pair.Value);
+        }
+        return null;
     }
 
     private static string? Text(JsonNode? node) =>

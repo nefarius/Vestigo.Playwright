@@ -29,7 +29,7 @@ Managed mode starts `ExecutablePath` with `Arguments`, then the plugin's own fla
 
 External mode connects to `ExternalEndpoint`. The caller cannot choose that URL. `ExternalTransport` is `StreamableHttp` (default), `Sse`, or `Auto`. `ExternalHeaders` are sent upstream and are not the Vestigo bearer token. Header values are redacted from logs. Redirects are disabled. User info, a query, and a fragment are rejected.
 
-A remote endpoint must be HTTPS unless `AllowInsecureRemote` is true, and it must have a credential header. A loopback endpoint with no credential header requires `AllowUnauthenticatedLoopback`. Loopback binding alone does not authenticate other local processes.
+A remote endpoint must be HTTPS unless `AllowInsecureRemote` is true, and `ExternalHeaders` must contain at least one entry. That check only tests whether a header is present. It does not verify that the header is a credential. The Playwright MCP backend has to enforce its own authentication before this check can be treated as access control. A loopback endpoint with no header requires `AllowUnauthenticatedLoopback`. Loopback binding alone does not authenticate other local processes.
 
 ## Browser and profiles
 

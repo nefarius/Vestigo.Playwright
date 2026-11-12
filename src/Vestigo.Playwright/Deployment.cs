@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
 using System.Security.Principal;
 
 namespace Vestigo.Playwright;
@@ -79,30 +81,71 @@ internal static class DirectoryProtection
 {
     public static void CreateProtected(string path)
     {
-        Directory.CreateDirectory(path);
         if (!OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(path);
             return;
-        var security = new System.Security.AccessControl.DirectorySecurity();
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        }
+        DirectorySecurity security = DesiredSecurity();
+        if (!Directory.Exists(path))
+            security.CreateDirectory(path);
+        ValidateExisting(path);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static DirectorySecurity DesiredSecurity()
+    {
         SecurityIdentifier? current = WindowsIdentity.GetCurrent().User;
         if (current is null)
             throw new PlaywrightException(PlaywrightCodes.Configuration, "The current Windows identity has no user SID.");
-        foreach (SecurityIdentifier sid in new[]
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        foreach (SecurityIdentifier sid in Trusted(current))
         {
-            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-            current
-        })
-        {
-            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+            security.AddAccessRule(new FileSystemAccessRule(
                 sid,
-                System.Security.AccessControl.FileSystemRights.FullControl,
-                System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
-                System.Security.AccessControl.PropagationFlags.None,
-                System.Security.AccessControl.AccessControlType.Allow));
+                FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow));
         }
-        new DirectoryInfo(path).SetAccessControl(security);
+        return security;
     }
+
+    [SupportedOSPlatform("windows")]
+    private static void ValidateExisting(string path)
+    {
+        SecurityIdentifier? current = WindowsIdentity.GetCurrent().User;
+        if (current is null)
+            throw new PlaywrightException(PlaywrightCodes.Configuration, "The current Windows identity has no user SID.");
+        DirectorySecurity security = new DirectoryInfo(path).GetAccessControl();
+        if (security.GetOwner(typeof(SecurityIdentifier)) is not SecurityIdentifier owner || !IsTrusted(owner, current))
+            throw new PlaywrightException(PlaywrightCodes.Configuration, "The Playwright state directory owner is not trusted.");
+        if (!security.AreAccessRulesProtected)
+            throw new PlaywrightException(PlaywrightCodes.Configuration, "The Playwright state directory must not inherit write access.");
+        foreach (FileSystemAccessRule rule in security.GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier)))
+        {
+            if (rule.AccessControlType != AccessControlType.Allow || rule.IdentityReference is not SecurityIdentifier sid || IsTrusted(sid, current))
+                continue;
+            const FileSystemRights dangerous = FileSystemRights.Write | FileSystemRights.Delete | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership | FileSystemRights.DeleteSubdirectoriesAndFiles;
+            if ((rule.FileSystemRights & dangerous) != 0)
+                throw new PlaywrightException(PlaywrightCodes.Configuration, "The Playwright state directory allows an untrusted account to change it.");
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static IEnumerable<SecurityIdentifier> Trusted(SecurityIdentifier current)
+    {
+        yield return new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        yield return new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        yield return current;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool IsTrusted(SecurityIdentifier sid, SecurityIdentifier current) =>
+        sid.Equals(current) ||
+        sid.Equals(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)) ||
+        sid.Equals(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
 }
 
 internal static class RuntimeChecks
