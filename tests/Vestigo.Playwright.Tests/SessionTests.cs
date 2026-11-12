@@ -258,6 +258,61 @@ public sealed class SessionTests
     }
 
     [Fact]
+    public async Task DiscoveryNotes_StayBoundedAndKeepActiveOrLostSessions()
+    {
+        var clock = new ManualClock();
+        var connector = new FakeConnector();
+        PlaywrightSettings settings = TestSettings.Create(idle: TimeSpan.FromMinutes(5));
+        var sessions = new SessionManager(settings, connector, clock);
+        var provider = TestSettings.Provider(sessions, settings);
+        bool allowCleared = false;
+        connector.Factory = (identity, _) =>
+        {
+            if (identity.OwnerId == "owner-active")
+                return Task.FromResult<IUpstreamConnection>(new FakeConnection { ThrowOnList = true });
+            if (identity.OwnerId == "owner-loss")
+                return Task.FromResult<IUpstreamConnection>(new FakeConnection { Call = (_, _) => throw new IOException("down") });
+            if (identity.SessionId == "session-cleared-0001" && allowCleared)
+                return Task.FromResult<IUpstreamConnection>(new FakeConnection());
+            throw new PlaywrightException(PlaywrightCodes.Unavailable, "missing " + identity.SessionId);
+        };
+        PluginSessionIdentity active = TestSettings.Identity("owner-active", "session-0123456789abcdef");
+        PluginSessionIdentity lost = TestSettings.Identity("owner-loss", "session-0123456789abcdef");
+        await provider.ListToolsAsync(new PluginToolContext("owner-active", active), CancellationToken.None);
+        await provider.CallToolAsync(new CallToolRequestParams { Name = "browser_navigate" }, new PluginToolContext("owner-loss", lost), CancellationToken.None);
+        await provider.ListToolsAsync(new PluginToolContext("owner-loss", lost), CancellationToken.None);
+        PluginSessionIdentity oldest = TestSettings.Identity("owner-disc", "session-0000000000000000");
+        PluginSessionIdentity newest = TestSettings.Identity("owner-disc", "session-0000000000000099");
+        for (int index = 0; index < SessionManager.MaxFailureNotes + 8; index++)
+        {
+            clock.UtcNow += TimeSpan.FromSeconds(1);
+            PluginSessionIdentity identity = TestSettings.Identity("owner-disc", $"session-{index:x16}");
+            await provider.ListToolsAsync(new PluginToolContext("owner-disc", identity), CancellationToken.None);
+            if (index == 0)
+                oldest = identity;
+            newest = identity;
+        }
+        Assert.False(sessions.TryGetNote(oldest, out _));
+        Assert.True(sessions.TryGetNote(newest, out PlaywrightException? recent));
+        Assert.Contains(newest.SessionId, recent!.Message);
+        Assert.True(sessions.TryGetNote(active, out PlaywrightException? activeNote));
+        Assert.Contains("catalog unavailable", activeNote!.Message);
+        Assert.True(sessions.TryGetNote(lost, out _));
+        PluginSessionIdentity cleared = TestSettings.Identity("owner-disc", "session-cleared-0001");
+        clock.UtcNow += TimeSpan.FromSeconds(1);
+        await provider.ListToolsAsync(new PluginToolContext("owner-disc", cleared), CancellationToken.None);
+        Assert.True(sessions.TryGetNote(cleared, out _));
+        allowCleared = true;
+        IReadOnlyList<Tool> listed = await provider.ListToolsAsync(new PluginToolContext("owner-disc", cleared), CancellationToken.None);
+        Assert.Contains("browser_navigate", listed.Select(tool => tool.Name));
+        Assert.False(sessions.TryGetNote(cleared, out _));
+        clock.UtcNow += TimeSpan.FromMinutes(5);
+        Assert.False(sessions.TryGetNote(newest, out _));
+        Assert.True(sessions.TryGetNote(active, out _));
+        Assert.True(sessions.TryGetNote(lost, out _));
+    }
+
+    [Fact]
     public async Task MissingIdentity_FailsClosed()
     {
         var sessions = new SessionManager(TestSettings.Create(), new FakeConnector(), new ManualClock());

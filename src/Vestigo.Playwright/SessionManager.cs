@@ -25,7 +25,7 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
     private readonly object _gate = new();
     private readonly Dictionary<SessionKey, SessionSlot> _slots = [];
     private readonly Dictionary<SessionKey, LossRecord> _losses = [];
-    private readonly Dictionary<SessionKey, PlaywrightException> _notes = [];
+    private readonly Dictionary<SessionKey, FailureNote> _notes = [];
     private readonly SemaphoreSlim _startups;
     private readonly PlaywrightSettings _settings;
     private readonly IUpstreamConnector _connector;
@@ -58,13 +58,25 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
     public void Note(PluginSessionIdentity identity, PlaywrightException exception)
     {
         lock (_gate)
-            _notes[LossKey(identity)] = exception;
+        {
+            _notes[LossKey(identity)] = new FailureNote(exception, _clock.UtcNow);
+            TrimNotes();
+        }
     }
 
     public bool TryGetNote(PluginSessionIdentity identity, out PlaywrightException? exception)
     {
         lock (_gate)
-            return _notes.TryGetValue(LossKey(identity), out exception);
+        {
+            TrimNotes();
+            if (_notes.TryGetValue(LossKey(identity), out FailureNote note))
+            {
+                exception = note.Exception;
+                return true;
+            }
+            exception = null;
+            return false;
+        }
     }
 
     public void ClearNote(PluginSessionIdentity identity)
@@ -383,6 +395,40 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
 
     private static SessionKey LossKey(PluginSessionIdentity identity) => new(identity.OwnerId, identity.SessionId);
 
+    private void TrimNotes()
+    {
+        DateTimeOffset now = _clock.UtcNow;
+        foreach ((SessionKey key, FailureNote note) in _notes.ToArray())
+        {
+            if (!IsNoteRetained(key) && now - note.RecordedUtc >= _settings.IdleTimeout)
+                _notes.Remove(key);
+        }
+        if (_notes.Count <= MaxFailureNotes)
+            return;
+        foreach (SessionKey key in _notes
+            .Where(pair => !IsNoteRetained(pair.Key))
+            .OrderBy(pair => pair.Value.RecordedUtc)
+            .Select(pair => pair.Key)
+            .ToArray())
+        {
+            if (_notes.Count <= MaxFailureNotes)
+                break;
+            _notes.Remove(key);
+        }
+    }
+
+    private bool IsNoteRetained(SessionKey key)
+    {
+        if (_losses.ContainsKey(key))
+            return true;
+        foreach (SessionSlot slot in _slots.Values)
+        {
+            if (slot.Identity is { } identity && LossKey(identity).Equals(key))
+                return true;
+        }
+        return false;
+    }
+
     internal sealed class SessionHold : IAsyncDisposable
     {
         private readonly SessionManager _manager;
@@ -487,7 +533,9 @@ internal sealed class SessionManager : IDisposable, IAsyncDisposable
         public DateTimeOffset LastUsedUtc { get; set; } = DateTimeOffset.UtcNow;
     }
 
+    internal const int MaxFailureNotes = 64;
     internal readonly record struct SessionKey(string OwnerId, string SessionId);
+    private readonly record struct FailureNote(PlaywrightException Exception, DateTimeOffset RecordedUtc);
 }
 
 internal sealed record LossRecord(string Code, string Message, IReadOnlyList<Tool>? Catalog);

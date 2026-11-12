@@ -44,12 +44,15 @@ internal sealed class FakeConnection : IUpstreamConnection
 {
     public bool Disposed;
     public bool ThrowOnDispose;
+    public bool ThrowOnList;
     public List<Tool> Tools { get; } = [ToolFactory.Named("browser_navigate")];
     public Func<CallToolRequestParams, CancellationToken, Task<CallToolResult>>? Call;
 
     public Task<IReadOnlyList<Tool>> ListToolsAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (ThrowOnList)
+            throw new PlaywrightException(PlaywrightCodes.Unavailable, "catalog unavailable");
         return Task.FromResult<IReadOnlyList<Tool>>(Tools);
     }
 
