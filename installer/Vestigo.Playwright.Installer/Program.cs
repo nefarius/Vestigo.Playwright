@@ -59,27 +59,10 @@ internal static class Program
     {
         Directory.CreateDirectory(options.OutputDirectory);
         string payloadMask = Path.Combine(options.PayloadDirectory, "*.*");
-        var files = new Files(payloadMask)
-        {
-            OnProcess = file => file.Permissions =
-            [
-                new FilePermission("SYSTEM", GenericPermission.All),
-                new FilePermission("Administrators", GenericPermission.All),
-                new FilePermission("Users", GenericPermission.Read | GenericPermission.Execute)
-            ]
-        };
         var directory = new Dir(
             new Id("PLAYWRIGHTDIR"),
             @"%CommonAppDataFolder%\Nefarius Software Solutions\Vestigo\plugins\playwright",
-            files)
-        {
-            Permissions =
-            [
-                new DirPermission("SYSTEM", GenericPermission.All),
-                new DirPermission("Administrators", GenericPermission.All),
-                new DirPermission("Users", GenericPermission.Read | GenericPermission.Execute)
-            ]
-        };
+            new Files(payloadMask));
         var project = new Project("Vestigo Playwright", directory)
         {
             GUID = ProductIdentity.UpgradeCode,
@@ -104,18 +87,22 @@ internal static class Program
         WixExtension.UI.PreferredVersion = "5.0.2";
         WixExtension.Util.PreferredVersion = "5.0.2";
         project.Include(WixExtension.Util);
-        // icacls replaces inherited ProgramData access after the files exist. The directory and
-        // its files are then explicit: SYSTEM and Administrators full control, Users read/execute.
+        // Deferred so it runs after InstallFiles has created the directory. Quoted grants avoid cmd.exe
+        // treating SID asterisks and parentheses as wildcards. SYSTEM and Administrators get full
+        // control; Users get read and execute; inheritance from ProgramData is removed.
         const string aclArguments =
-            "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright\" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /T /C";
-        project.AddAction(new WixQuietExecAction(
+            "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright\" /inheritance:r /grant:r \"SYSTEM:(OI)(CI)F\" \"Administrators:(OI)(CI)F\" \"Users:(OI)(CI)RX\" /T";
+        var protect = new WixQuietExecAction(
             new Id("ProtectPlaywrightAcl"),
             "icacls.exe",
             aclArguments,
             Return.check,
             When.After,
             Step.InstallFiles,
-            new Condition("NOT REMOVE~=\"ALL\"")));
+            new Condition("NOT REMOVE~=\"ALL\""));
+        protect.Execute = Execute.deferred;
+        protect.Impersonate = false;
+        project.AddAction(protect);
         string msi = project.BuildMsi();
         if (!File.Exists(msi))
             throw new InvalidOperationException("WiX did not produce the MSI.");
