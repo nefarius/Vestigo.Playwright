@@ -370,5 +370,8 @@ finally {
         if ($path -eq $settingsFile -and -not $createdSettings) { continue }
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
     }
+    if ($createdSettings -and (Test-Path -LiteralPath $settingsRoot) -and -not (Get-ChildItem -LiteralPath $settingsRoot -Force)) {
+        Remove-Item -LiteralPath $settingsRoot -Force
+    }
     if (Test-Path -LiteralPath $missingHost) { Remove-Item -LiteralPath $missingHost -Recurse -Force }
 }
