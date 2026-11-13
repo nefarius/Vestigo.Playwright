@@ -84,6 +84,8 @@ jobs:
             'tests/Vestigo.Playwright.Tests/Vestigo.Playwright.Tests.csproj'
             'tests/Vestigo.Playwright.FakeBackend/Vestigo.Playwright.FakeBackend.csproj'
             'installer/Vestigo.Playwright.Setup.Core/Vestigo.Playwright.Setup.Core.csproj'
+            'installer/Vestigo.Playwright.Installer/Vestigo.Playwright.Installer.csproj'
+            'installer/Vestigo.Playwright.Setup/Vestigo.Playwright.Setup.csproj'
           )
           foreach ($project in $projects) {
             dotnet restore $project --no-dependencies -p:RestorePackagesWithLockFile=true
@@ -94,14 +96,16 @@ jobs:
             tests = 'tests/Vestigo.Playwright.Tests/packages.lock.json'
             'fake-backend' = 'tests/Vestigo.Playwright.FakeBackend/packages.lock.json'
             'setup-core' = 'installer/Vestigo.Playwright.Setup.Core/packages.lock.json'
+            installer = 'installer/Vestigo.Playwright.Installer/packages.lock.json'
+            setup = 'installer/Vestigo.Playwright.Setup/packages.lock.json'
           }
           foreach ($name in $sources.Keys) {
             $directory = Join-Path $destination $name
             New-Item -ItemType Directory -Force -Path $directory | Out-Null
             Copy-Item -LiteralPath $sources[$name] -Destination (Join-Path $directory 'packages.lock.json')
           }
-          if ((Get-ChildItem -LiteralPath $destination -Recurse -Filter 'packages.lock.json' -File).Count -ne 4) {
-            throw 'Expected four NuGet lock files.'
+          if ((Get-ChildItem -LiteralPath $destination -Recurse -Filter 'packages.lock.json' -File).Count -ne 6) {
+            throw 'Expected six NuGet lock files.'
           }
 
       - name: Upload lock files
@@ -132,8 +136,8 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t locks < <(find osv-lockfiles -name '*.lock.json' | sort)
-          if [[ ${#locks[@]} -ne 4 ]]; then
-            echo "Expected 4 NuGet lock files, found ${#locks[@]}."
+          if [[ ${#locks[@]} -ne 6 ]]; then
+            echo "Expected 6 NuGet lock files, found ${#locks[@]}."
             find osv-lockfiles -type f -print
             exit 1
           fi
@@ -220,10 +224,121 @@ jobs:
             -PluginPublishDirectory artifacts/plugin `
             -FakeBackendDirectory artifacts/fake-backend
 
+      - name: Build installer projects
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet build installer/Vestigo.Playwright.Installer/Vestigo.Playwright.Installer.csproj -c Release
+          dotnet build installer/Vestigo.Playwright.Setup/Vestigo.Playwright.Setup.csproj -c Release
+
       - name: Upload published plugin
         uses: actions/upload-artifact@v7
         with:
           name: vestigo-playwright
           path: plugin/artifacts/plugin/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload published host
+        uses: actions/upload-artifact@v7
+        with:
+          name: vestigo-host
+          path: plugin/artifacts/host/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload fake backend
+        uses: actions/upload-artifact@v7
+        with:
+          name: vestigo-playwright-fake-backend
+          path: plugin/artifacts/fake-backend/
+          if-no-files-found: error
+          retention-days: 3
+
+  installer:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
+    defaults:
+      run:
+        working-directory: plugin
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: plugin
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install WiX
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+
+      - name: Download published plugin
+        uses: actions/download-artifact@v8
+        with:
+          name: vestigo-playwright
+          path: plugin/artifacts/plugin
+
+      - name: Download published host
+        uses: actions/download-artifact@v8
+        with:
+          name: vestigo-host
+          path: plugin/artifacts/host
+
+      - name: Download fake backend
+        uses: actions/download-artifact@v8
+        with:
+          name: vestigo-playwright-fake-backend
+          path: plugin/artifacts/fake-backend
+
+      - name: Build MSI and Setup.exe
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          ./scripts/Build-Installer.ps1 -PluginOutput artifacts/plugin -Version 0.9.0 -Output artifacts/installer/baseline -SkipPublish -MsiOnly
+          ./scripts/Build-Installer.ps1 -PluginOutput artifacts/plugin -Output artifacts/installer -SkipPublish
+
+      - name: Exercise installer lifecycle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:DOTNET_HOST_PATH = (Get-Command dotnet).Source
+          $version = [string](Get-Content -Raw artifacts/plugin/plugin.json | ConvertFrom-Json).version
+          ./tests/Test-Installer.ps1 `
+            -CurrentMsi "artifacts/installer/Vestigo.Playwright-$version.msi" `
+            -BaselineMsi artifacts/installer/baseline/Vestigo.Playwright-0.9.0.msi `
+            -SetupExe "artifacts/installer/Vestigo.Playwright.Setup-$version.exe" `
+            -HostPublishDirectory artifacts/host `
+            -PluginPublishDirectory artifacts/plugin `
+            -FakeBackendDirectory artifacts/fake-backend
+
+      - name: Upload installer logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vestigo-playwright-installer-logs
+          path: plugin/artifacts/installer-logs/
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Upload MSI and Setup.exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: vestigo-playwright-installer
+          path: |
+            plugin/artifacts/installer/Vestigo.Playwright-*.msi
+            plugin/artifacts/installer/Vestigo.Playwright-*.manifest.json
+            plugin/artifacts/installer/Vestigo.Playwright.Setup-*.exe
           if-no-files-found: error
           retention-days: 3
