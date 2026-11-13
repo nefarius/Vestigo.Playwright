@@ -87,14 +87,16 @@ internal static class Program
         WixExtension.UI.PreferredVersion = "5.0.2";
         WixExtension.Util.PreferredVersion = "5.0.2";
         project.Include(WixExtension.Util);
-        // Deferred so it runs after InstallFiles has created the directory. Quoted grants avoid cmd.exe
-        // treating SID asterisks and parentheses as wildcards. SYSTEM and Administrators get full
-        // control; Users get read and execute; inheritance from ProgramData is removed.
-        const string aclArguments =
-            "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright\" /inheritance:r /grant:r \"SYSTEM:(OI)(CI)F\" \"Administrators:(OI)(CI)F\" \"Users:(OI)(CI)RX\" /T";
+        // Deferred so it runs after InstallFiles has created the directory. (OI)(CI) on a file is
+        // inherit-only and blocks the next upgrade, so files get an explicit grant. cmd.exe /c keeps
+        // the parentheses and wildcard inside one quoted command.
+        const string pluginDirectory = "[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright";
+        string aclArguments =
+            "/d /s /c \"icacls \\\"" + pluginDirectory + "\\\" /inheritance:r /grant:r SYSTEM:(OI)(CI)F Administrators:(OI)(CI)F Users:(OI)(CI)RX " +
+            "&& icacls \\\"" + pluginDirectory + "\\*\" /inheritance:r /grant:r SYSTEM:F Administrators:F Users:RX /T\"";
         var protect = new WixQuietExecAction(
             new Id("ProtectPlaywrightAcl"),
-            "icacls.exe",
+            "cmd.exe",
             aclArguments,
             Return.check,
             When.After,
