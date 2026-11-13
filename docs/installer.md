@@ -30,7 +30,7 @@ Install, quietly, for a normal Vestigo installation:
 .\Vestigo.Playwright.Setup-1.0.0.exe --mode external --quiet
 ```
 
-`--vestigo` takes the fully qualified directory that contains `Vestigo.exe` and `Vestigo.Abstractions.dll` when Vestigo is portable or installed outside Program Files. `--mode managed` also requires Chrome or Edge registered in App Paths, and a managed host: `node.exe` on `PATH` or under the usual Node.js install directories, or the file named by `Vestigo:Modules:Playwright:ExecutablePath` in Vestigo's `appsettings.json` when that file exists. `--verify-only` checks the embedded MSI hash and the selected prerequisites, then exits without installing. `--uninstall` removes the product whose code is embedded in that Setup.exe.
+`--vestigo` selects the fully qualified directory that contains `Vestigo.exe` and `Vestigo.Abstractions.dll` when Vestigo is portable or installed outside Program Files. It does not change the install destination. The MSI always writes the plugin to `%ProgramData%\Nefarius Software Solutions\Vestigo\plugins\playwright`. A portable host that loads plugins from another root needs the manual copy in [deployment.md](deployment.md). `--mode managed` also requires Chrome or Edge registered in App Paths. When `Vestigo:Modules:Playwright:ExecutablePath` is set, that file is the only managed host that is accepted. When it is not set, `node.exe` must be on `PATH` or under the usual Node.js install directories. `--verify-only` checks the embedded MSI hash and the selected prerequisites, then exits without installing. `--uninstall` removes the product whose code is embedded in that Setup.exe.
 
 The MSI can be installed directly. It does not check for Vestigo, Node.js, or a browser.
 

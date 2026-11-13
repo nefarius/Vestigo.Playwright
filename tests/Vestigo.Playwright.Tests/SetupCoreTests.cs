@@ -125,9 +125,11 @@ public sealed class SetupCoreTests
         Assert.True(NodeLayout.Found(path => path.EndsWith("node.exe"), NodeLayout.Candidates("C:\\Tools", "/opt", null, null)));
         Assert.False(NodeLayout.Found(_ => false, NodeLayout.Candidates(null, "/opt", null, null)));
         const string configured = @"C:\runtime\dotnet.exe";
+        Assert.Equal([configured], NodeLayout.Candidates(@"C:\Tools", @"C:\Program Files", null, null, configured).ToArray());
         bool configuredHost = NodeLayout.Found(path => path == configured, NodeLayout.Candidates(null, @"C:\Program Files", null, null, configured));
         Assert.True(configuredHost);
         Assert.False(NodeLayout.Found(_ => false, NodeLayout.Candidates(null, @"C:\Program Files", null, null, configured)));
+        Assert.False(NodeLayout.Found(path => path.EndsWith("node.exe"), NodeLayout.Candidates(@"C:\Tools", "/opt", null, null, @"C:\missing\dotnet.exe")));
         Assert.Equal(ExitCodes.Success, SetupPlanner.Evaluate(new SetupInvocation(null, PrerequisiteMode.Managed, false, false, false, false), true, configuredHost, true));
         Assert.Equal(configured, PlaywrightHostSettings.ExecutablePath("""{"vestigo":{"modules":{"playwright":{"ExecutablePath":"C:\\runtime\\dotnet.exe"}}}}"""));
         Assert.Null(PlaywrightHostSettings.ExecutablePath("""{"Vestigo":{"Modules":{"Playwright":{}}}}"""));

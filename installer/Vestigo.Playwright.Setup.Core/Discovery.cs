@@ -20,7 +20,11 @@ public static class NodeLayout
     public static IEnumerable<string> Candidates(string? pathVariable, string programFiles, string? programFilesX86, string? localAppData, string? configuredExecutable = null)
     {
         if (!string.IsNullOrWhiteSpace(configuredExecutable))
+        {
             yield return configuredExecutable;
+            yield break;
+        }
+
         foreach (string entry in (pathVariable ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             yield return Path.Combine(entry, "node.exe");
         if (!string.IsNullOrWhiteSpace(programFiles))

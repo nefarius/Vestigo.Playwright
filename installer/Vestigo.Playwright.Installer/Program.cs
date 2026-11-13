@@ -88,9 +88,9 @@ internal static class Program
         WixExtension.Util.PreferredVersion = "5.0.2";
         project.Include(WixExtension.Util);
         // Deferred so it runs after InstallFiles has created the directories. (OI)(CI) on a file is
-        // inherit-only and blocks the next upgrade, so files get an explicit grant first and the
-        // plugin directory then gets the inheritable grant. The plugins directory is the loader
-        // root; it is protected after the plugin tree so that grant cannot replace the file ACLs.
+        // inherit-only and blocks the next upgrade, so files get an explicit grant first. /grant:r
+        // replaces only the named SIDs, so the plugin directory DACL is reset before its inheritable
+        // grant. The plugins directory is the loader root and is protected after that grant.
         const string pluginsDirectory = "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\"";
         const string pluginDirectory = "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright\"";
         // icacls treats *SID as a well-known SID. This action runs icacls.exe directly, so the asterisk is not expanded.
@@ -101,9 +101,13 @@ internal static class Program
             pluginDirectory + " /inheritance:r /grant:r " + fileGrants,
             Step.InstallFiles));
         project.AddAction(AclAction(
+            "ResetPlaywrightDirectory",
+            pluginDirectory + " /reset",
+            new Step("ProtectPlaywrightFiles")));
+        project.AddAction(AclAction(
             "ProtectPlaywrightDirectory",
             pluginDirectory + " /inheritance:r /grant:r " + directoryGrants,
-            new Step("ProtectPlaywrightFiles")));
+            new Step("ResetPlaywrightDirectory")));
         project.AddAction(AclAction(
             "ProtectPluginsDirectory",
             pluginsDirectory + " /inheritance:r /grant:r " + directoryGrants,

@@ -44,8 +44,12 @@ $settingsFile = Join-Path $settingsRoot 'appsettings.json'
 $sentinel = Join-Path $settingsRoot 'installer-sentinel'
 $profiles = Join-Path $settingsRoot 'playwright-managed-profiles'
 $artifacts = Join-Path $settingsRoot 'playwright-managed-artifacts'
-foreach ($existing in @($settingsFile, $sentinel, $profiles, $artifacts)) {
+foreach ($existing in @($settingsRoot, $settingsFile, $sentinel, $profiles, $artifacts, $pluginRoot)) {
     if (Test-Path -LiteralPath $existing) { throw "Refusing to replace an existing Vestigo path: $existing" }
+}
+foreach ($code in @($currentCode, $baselineCode)) {
+    $registration = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$code"
+    if (Test-Path -LiteralPath $registration) { throw "Refusing to replace an existing product registration: $code" }
 }
 $createdSettings = $false
 $process = $null
