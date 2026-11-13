@@ -89,7 +89,18 @@ function Assert-ProtectedPayload {
         'S-1-5-32-544',
         'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',
         'S-1-3-0')
-    $dangerous = [Security.AccessControl.FileSystemRights]'Write, Delete, ChangePermissions, TakeOwnership, DeleteSubdirectoriesAndFiles'
+    # Same mask as Vestigo's plugin loader: Write, Delete, ChangePermissions, TakeOwnership,
+    # and DeleteSubdirectoriesAndFiles. Compare the underlying integers so the Synchronize bit
+    # on a Users read-and-execute allow is not treated as write access.
+    $dangerous = [int64]0
+    foreach ($right in @(
+            [Security.AccessControl.FileSystemRights]::Write,
+            [Security.AccessControl.FileSystemRights]::Delete,
+            [Security.AccessControl.FileSystemRights]::ChangePermissions,
+            [Security.AccessControl.FileSystemRights]::TakeOwnership,
+            [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles)) {
+        $dangerous = $dangerous -bor [int64]$right
+    }
     $directoryAcl = Get-Acl -LiteralPath $pluginRoot
     if (-not $directoryAcl.AreAccessRulesProtected) { throw "The plugin directory still inherits access: $pluginRoot" }
     $directoryRules = $directoryAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
@@ -119,8 +130,9 @@ function Assert-ProtectedPayload {
             if ($rule.PropagationFlags.HasFlag([Security.AccessControl.PropagationFlags]::InheritOnly)) { continue }
             $sid = $rule.IdentityReference.Value
             if ($trusted -contains $sid) { continue }
-            if (($rule.FileSystemRights -band $dangerous) -ne [Security.AccessControl.FileSystemRights]::None) {
-                throw "$entry grants $sid $($rule.FileSystemRights)."
+            $rights = [int64]$rule.FileSystemRights
+            if (($rights -band $dangerous) -ne 0) {
+                throw "$entry grants $sid $($rule.FileSystemRights) (0x$($rights.ToString('X')))."
             }
         }
     }
