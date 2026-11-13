@@ -1,6 +1,8 @@
 # Deployment
 
-Publish this plugin and copy the directory into the protected Vestigo plugin root. Stop Vestigo before replacing a plugin that is already loaded, then start it again. The public Vestigo MSI does not carry this plugin.
+The Windows installer copies the published plugin into the protected Vestigo plugin root. It does not enable plugin loading, enable the `Playwright` module, or restart Vestigo. Install or upgrade with [installer.md](installer.md), then stop Vestigo and start it again so the host loads the new files. The public Vestigo MSI does not carry this plugin.
+
+A checkout can also publish the directory and copy it by hand:
 
 ```powershell
 dotnet publish src\Vestigo.Playwright\Vestigo.Playwright.csproj -c Release -o artifacts\plugin

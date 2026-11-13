@@ -22,4 +22,8 @@ API 1.1 does not proxy MCP resources, roots, sampling, or elicitation. Resource 
 
 ## Installer and host policy
 
-Installation must not replace Vestigo's trust mode, package pins, or unrelated module settings. A direct MSI must not launch other installers. Browser profiles are not removed with the product unless a separate data-removal choice says so. Shared Chrome, Edge, and Node installations are not uninstalled with this plugin.
+The MSI and Setup.exe copy plugin files. They do not change `TrustMode`, package hashes, API tokens, or module settings, and they do not stop or restart the Vestigo service. A direct MSI does not launch other installers. Setup.exe embeds one MSI and refuses it when the SHA-256 compiled into that executable does not match. It does not download Node.js, Chrome, Edge, or `@playwright/mcp`. Exit code 3 remains reserved for a download failure.
+
+The installed directory is writable by SYSTEM and Administrators and readable and executable by Users. It does not inherit write access from ProgramData. That is the ACL the Vestigo plugin loader accepts for a service. Pull-request packages are unsigned. A tagged release can sign the plugin binaries, the MSI, and Setup.exe; an unsigned package is not a signed release.
+
+Browser profiles are not removed with the product. Shared Chrome, Edge, and Node installations are not uninstalled with this plugin. Uninstall leaves the Vestigo settings file in place.

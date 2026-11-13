@@ -24,3 +24,9 @@ An upstream tool that returns `IsError` is a normal tool result. It does not tom
 A persistent profile that is already open fails with `playwright_configuration_invalid` and is not shared. Close the other owner of that profile, or use ephemeral profiles.
 
 Managed headed mode from a service logs that the browser cannot be shown from session 0 and tells the operator to use external mode or `Headed: false`.
+
+## Installer
+
+Setup.exe exit codes are listed in [installer.md](installer.md). Code 6 means the Vestigo directory does not contain `Vestigo.exe` and `Vestigo.Abstractions.dll`. Pass `--vestigo` with that directory when Vestigo is not under Program Files. Code 2 means `--mode managed` could not find Node.js or Chrome or Edge. Code 4 means the embedded MSI did not match the hash built into Setup.exe; the message does not include the file contents. Code 3 is unused because this Setup.exe does not download files.
+
+The MSI log from `tests/Test-Installer.ps1` is written under `artifacts/installer-logs`. An upgrade installs over the older plugin product only. It does not upgrade, stop, or uninstall Vestigo. After a file install, restart Vestigo. The package does not do that. If the host reports that the plugin directory is writable by an untrusted account, the directory ACL was changed after install; repair with `msiexec /fa` and the product code for the installed version.

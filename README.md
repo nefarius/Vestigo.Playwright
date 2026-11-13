@@ -32,7 +32,9 @@ dotnet pack <vestigo>\server\Vestigo.Abstractions\Vestigo.Abstractions.csproj -c
 
 ## Deploy
 
-Copy the publish directory to an immediate child of the Vestigo plugin root, for example `%ProgramData%\Nefarius Software Solutions\Vestigo\plugins\playwright`. The directory must be writable only by SYSTEM and Administrators. Loading plugins and enabling the `Playwright` module are separate settings. See [docs/deployment.md](docs/deployment.md).
+On Windows, `scripts/Build-Installer.ps1` builds `Vestigo.Playwright-<version>.msi` and `Vestigo.Playwright.Setup-<version>.exe`. Setup.exe checks the embedded MSI hash, requires a Vestigo installation, and in `--mode managed` also checks for Node.js and Chrome or Edge. It does not download those prerequisites, change Vestigo settings, or restart the service. The MSI copies files into `%ProgramData%\Nefarius Software Solutions\Vestigo\plugins\playwright` and grants SYSTEM and Administrators full control and Users read and execute. Loading plugins and enabling the `Playwright` module are still separate settings. See [docs/installer.md](docs/installer.md) and [docs/deployment.md](docs/deployment.md).
+
+A manual copy of the publish directory to that same plugin path is the non-installer deployment. The directory must be writable only by SYSTEM and Administrators.
 
 ## Select a browser session
 
@@ -54,9 +56,7 @@ The same Vestigo bearer token plus the same session ID is the same browser. A di
 
 Those tests use a fake backend. They do not prove a visible Chrome or Edge window, a Windows service desktop, or attachment to an existing browser. An opt-in smoke test against the pinned official backend is still separate; headless execution would not prove the interactive desktop either.
 
-GitHub Actions runs the same checks on Windows. It packs `Vestigo.Abstractions` 1.1.0 from the Vestigo commit pinned in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), publishes this plugin and the fake backend, publishes that host, and runs `tests/Test-PublishedHost.ps1`. The workflow also runs secret scanning and dependency checks. MSI installation, the bootstrapper, and a real Chrome, Edge, or `@playwright/mcp` session remain separate checks.
-
-The Windows Installer package and bootstrapper are not built yet. [docs/installer.md](docs/installer.md) records the setup rules that already have tests.
+GitHub Actions runs the same checks on Windows. It packs `Vestigo.Abstractions` 1.1.0 from the Vestigo commit pinned in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), publishes this plugin and the fake backend, publishes that host, and runs `tests/Test-PublishedHost.ps1`. A following Windows job builds the unsigned MSI and Setup.exe from those published files and runs `tests/Test-Installer.ps1`: upgrade, repair, protected ACLs, a fake-backend call through the installed plugin, and uninstall. That job does not sign the packages, download Node.js or a browser, launch Chrome or Edge, or restart a Vestigo service. The workflow also runs secret scanning and dependency checks. A real `@playwright/mcp` session remains a separate check.
 
 ## Configuration and failures
 
