@@ -60,10 +60,12 @@ $installer = New-Object -ComObject WindowsInstaller.Installer
 $database = $installer.OpenDatabase($msi, 0)
 function Get-MsiProperty([string]$Name) {
     $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$Name'")
-    $view.Execute()
+    $null = $view.Execute()
     $record = $view.Fetch()
     if (-not $record) { throw "The MSI is missing property $Name." }
-    return [string]$record.StringData(1)
+    $value = [string]$record.StringData(1)
+    $null = $view.Close()
+    return $value
 }
 $productCode = Get-MsiProperty 'ProductCode'
 $upgradeCode = Get-MsiProperty 'UpgradeCode'
