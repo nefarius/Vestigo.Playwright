@@ -32,7 +32,7 @@ dotnet pack <vestigo>\server\Vestigo.Abstractions\Vestigo.Abstractions.csproj -c
 
 ## Deploy
 
-On Windows, `scripts/Build-Installer.ps1` builds `Vestigo.Playwright-<version>.msi` and `Vestigo.Playwright.Setup-<version>.exe`. Setup.exe checks the embedded MSI hash, requires a Vestigo installation, and in `--mode managed` also checks for Node.js and Chrome or Edge. It does not download those prerequisites, change Vestigo settings, or restart the service. The MSI copies files into `%ProgramData%\Nefarius Software Solutions\Vestigo\plugins\playwright` and grants SYSTEM and Administrators full control and Users read and execute. Loading plugins and enabling the `Playwright` module are still separate settings. See [docs/installer.md](docs/installer.md) and [docs/deployment.md](docs/deployment.md).
+On Windows, `scripts/Build-Installer.ps1` builds `Vestigo.Playwright-<version>.msi` and `Vestigo.Playwright.Setup-<version>.exe`. Setup.exe checks the embedded MSI hash, requires a Vestigo installation, and in `--mode managed` also checks for Node.js and Chrome or Edge. It does not download those prerequisites, change Vestigo settings, or restart the service. The MSI copies files into `%ProgramData%\Nefarius Software Solutions\Vestigo\plugins\playwright` and grants SYSTEM and Administrators full control and Users read and execute on that directory and on the `plugins` directory above it. Loading plugins and enabling the `Playwright` module are still separate settings. See [docs/installer.md](docs/installer.md) and [docs/deployment.md](docs/deployment.md).
 
 A manual copy of the publish directory to that same plugin path is the non-installer deployment. The directory must be writable only by SYSTEM and Administrators.
 

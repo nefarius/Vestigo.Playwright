@@ -6,7 +6,7 @@ Installation copies the published plugin into:
 
 `%ProgramData%\Nefarius Software Solutions\Vestigo\plugins\playwright`
 
-SYSTEM and Administrators receive full control. Users receive read and execute. The directory does not inherit write access from ProgramData. The package does not change Vestigo settings, stop or restart the Vestigo service, install Node.js or a browser, or remove Chrome, Edge, Node.js, browser profiles, or other files in the Vestigo settings directory. Loading plugins and enabling the `Playwright` module remain administrator settings. See [deployment.md](deployment.md).
+SYSTEM and Administrators receive full control of that directory and of the `plugins` directory above it. Users receive read and execute. Neither directory inherits write access from ProgramData. The plugin loader checks the `plugins` directory before it loads a deployment. The package does not change Vestigo settings, stop or restart the Vestigo service, install Node.js or a browser, or remove Chrome, Edge, Node.js, browser profiles, or other files in the Vestigo settings directory. Loading plugins and enabling the `Playwright` module remain administrator settings. See [deployment.md](deployment.md).
 
 The MSI does not launch other installers. Setup.exe does not download prerequisites. Exit code 3 is reserved for a download failure and is not produced by this build.
 

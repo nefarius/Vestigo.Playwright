@@ -12,7 +12,7 @@ The publish folder contains `plugin.json`, `Vestigo.Playwright.dll`, and `Vestig
 
 `%ProgramData%\Nefarius Software Solutions\Vestigo\plugins\playwright`
 
-Protect that tree so only SYSTEM and Administrators can write it. A development host can use `VESTIGO_SETTINGS_DIR`; its `plugins` child is the default root. `tests/Test-PublishedHost.ps1` does that with an ACL-protected temporary directory and does not install a service.
+Protect that tree, and the `plugins` directory that contains it, so only SYSTEM and Administrators can write them. A development host can use `VESTIGO_SETTINGS_DIR`; its `plugins` child is the default root. `tests/Test-PublishedHost.ps1` does that with an ACL-protected temporary directory and does not install a service.
 
 Enable plugin loading and the module separately:
 

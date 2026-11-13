@@ -83,6 +83,55 @@ function Get-ProductVersion([string]$ProductCode) {
     }
 }
 
+function Protect-ServiceState([string]$directory) {
+    # The test process is an administrator, not LocalSystem. Vestigo's startup repair would grant this
+    # user full control of the settings directory, and the plugin loader would reject that ancestor.
+    # A service running as SYSTEM does not add that grant. Apply the service ACL without changing the
+    # protected plugin directories underneath it.
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]$sid,
+            'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    Set-Acl -LiteralPath $directory -AclObject $security
+}
+
+function Assert-ProtectedDirectory([string]$entry, [int64]$dangerous, [string[]]$trusted) {
+    $acl = Get-Acl -LiteralPath $entry
+    if (-not $acl.AreAccessRulesProtected) { throw "The directory still inherits access: $entry" }
+    $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if ($owner -notin $trusted) { throw "$entry is owned by $owner." }
+    $rules = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+        $rule = @($rules | Where-Object {
+            $_.IdentityReference.Value -eq $sid -and $_.AccessControlType -eq 'Allow' -and
+            -not $_.PropagationFlags.HasFlag([Security.AccessControl.PropagationFlags]::InheritOnly)
+        })
+        if ($rule.Count -lt 1) { throw "The directory does not grant $sid : $entry" }
+        $full = [int64][Security.AccessControl.FileSystemRights]::FullControl
+        if ((([int64]$rule[0].FileSystemRights) -band $full) -ne $full) { throw "$sid is missing full control on $entry." }
+    }
+    $users = @($rules | Where-Object {
+        $_.IdentityReference.Value -eq 'S-1-5-32-545' -and $_.AccessControlType -eq 'Allow' -and
+        -not $_.PropagationFlags.HasFlag([Security.AccessControl.PropagationFlags]::InheritOnly)
+    })
+    if ($users.Count -lt 1) { throw "Users do not have an allow entry on $entry." }
+    $readExecute = [int64][Security.AccessControl.FileSystemRights]::ReadAndExecute
+    if ((([int64]$users[0].FileSystemRights) -band $readExecute) -ne $readExecute) { throw "Users are missing read and execute on $entry." }
+    foreach ($rule in $rules) {
+        if ($rule.AccessControlType -ne 'Allow') { continue }
+        if ($rule.PropagationFlags.HasFlag([Security.AccessControl.PropagationFlags]::InheritOnly)) { continue }
+        $sid = $rule.IdentityReference.Value
+        if ($trusted -contains $sid) { continue }
+        $rights = [int64]$rule.FileSystemRights
+        if (($rights -band $dangerous) -ne 0) {
+            throw "$entry grants $sid $($rule.FileSystemRights) (0x$($rights.ToString('X')))."
+        }
+    }
+}
+
 function Assert-ProtectedPayload {
     $trusted = @(
         'S-1-5-18',
@@ -101,25 +150,8 @@ function Assert-ProtectedPayload {
             [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles)) {
         $dangerous = $dangerous -bor [int64]$right
     }
-    $directoryAcl = Get-Acl -LiteralPath $pluginRoot
-    if (-not $directoryAcl.AreAccessRulesProtected) { throw "The plugin directory still inherits access: $pluginRoot" }
-    $directoryRules = $directoryAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
-    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
-        $rule = @($directoryRules | Where-Object {
-            $_.IdentityReference.Value -eq $sid -and $_.AccessControlType -eq 'Allow' -and
-            -not $_.PropagationFlags.HasFlag([Security.AccessControl.PropagationFlags]::InheritOnly)
-        })
-        if ($rule.Count -lt 1) { throw "The plugin directory does not grant $sid." }
-        $full = [Security.AccessControl.FileSystemRights]::FullControl
-        if (($rule[0].FileSystemRights -band $full) -ne $full) { throw "$sid is missing full control on the plugin directory." }
-    }
-    $users = @($directoryRules | Where-Object {
-        $_.IdentityReference.Value -eq 'S-1-5-32-545' -and $_.AccessControlType -eq 'Allow' -and
-        -not $_.PropagationFlags.HasFlag([Security.AccessControl.PropagationFlags]::InheritOnly)
-    })
-    if ($users.Count -lt 1) { throw 'Users do not have an allow entry on the plugin directory.' }
-    $readExecute = [Security.AccessControl.FileSystemRights]::ReadAndExecute
-    if (($users[0].FileSystemRights -band $readExecute) -ne $readExecute) { throw 'Users are missing read and execute on the plugin directory.' }
+    Assert-ProtectedDirectory (Split-Path -Parent $pluginRoot) $dangerous $trusted
+    Assert-ProtectedDirectory $pluginRoot $dangerous $trusted
     $entries = @($pluginRoot) + @(Get-ChildItem -LiteralPath $pluginRoot -Recurse -Force | ForEach-Object FullName)
     foreach ($entry in $entries) {
         $acl = Get-Acl -LiteralPath $entry
@@ -220,6 +252,8 @@ try {
         }
     }
     New-Item -ItemType Directory -Force -Path $settingsRoot | Out-Null
+    Protect-ServiceState $settingsRoot
+    Assert-ProtectedPayload
     $settings | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $settingsFile -Encoding utf8NoBOM
     $createdSettings = $true
     $start = [Diagnostics.ProcessStartInfo]::new($hostExe)

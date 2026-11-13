@@ -87,9 +87,11 @@ internal static class Program
         WixExtension.UI.PreferredVersion = "5.0.2";
         WixExtension.Util.PreferredVersion = "5.0.2";
         project.Include(WixExtension.Util);
-        // Deferred so it runs after InstallFiles has created the directory. (OI)(CI) on a file is
+        // Deferred so it runs after InstallFiles has created the directories. (OI)(CI) on a file is
         // inherit-only and blocks the next upgrade, so files get an explicit grant first and the
-        // directory then gets the inheritable grant.
+        // plugin directory then gets the inheritable grant. The plugins directory is the loader
+        // root; it is protected after the plugin tree so that grant cannot replace the file ACLs.
+        const string pluginsDirectory = "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\"";
         const string pluginDirectory = "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright\"";
         project.AddAction(AclAction(
             "ProtectPlaywrightFiles",
@@ -99,6 +101,10 @@ internal static class Program
             "ProtectPlaywrightDirectory",
             pluginDirectory + " /inheritance:r /grant:r \"SYSTEM:(OI)(CI)F\" \"Administrators:(OI)(CI)F\" \"Users:(OI)(CI)RX\"",
             new Step("ProtectPlaywrightFiles")));
+        project.AddAction(AclAction(
+            "ProtectPluginsDirectory",
+            pluginsDirectory + " /inheritance:r /grant:r \"SYSTEM:(OI)(CI)F\" \"Administrators:(OI)(CI)F\" \"Users:(OI)(CI)RX\"",
+            new Step("ProtectPlaywrightDirectory")));
         string msi = project.BuildMsi();
         if (!File.Exists(msi))
             throw new InvalidOperationException("WiX did not produce the MSI.");
