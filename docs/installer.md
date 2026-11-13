@@ -12,13 +12,13 @@ The MSI does not launch other installers. Setup.exe does not download prerequisi
 
 ## Commands
 
-Build both packages on Windows with WiX 5.0.2, the UI and Util extensions, and the .NET 10 SDK. The script publishes the plugin once, checks that shared host assemblies are absent, builds the MSI, and embeds that MSI and its SHA-256 in Setup.exe.
+Build both packages on Windows with PowerShell 7.4 or later, WiX 5.0.2, the UI and Util extensions, and the .NET 10 SDK. The script publishes the plugin once, checks that shared host assemblies are absent, builds the MSI, and embeds that MSI and its SHA-256 in Setup.exe.
 
 ```powershell
 dotnet tool install --global wix --version 5.0.2
 wix extension add -g WixToolset.UI.wixext/5.0.2
 wix extension add -g WixToolset.Util.wixext/5.0.2
-./scripts/Build-Installer.ps1
+pwsh ./scripts/Build-Installer.ps1
 ```
 
 Pull-request builds are unsigned. A later tagged release can sign the published plugin binaries, the MSI, and Setup.exe. `Build-Installer.ps1 -RequireSignature` rejects a package that is not Authenticode signed. Without that switch the script accepts `NotSigned` or `Valid` and rejects a hash mismatch.
@@ -30,7 +30,7 @@ Install, quietly, for a normal Vestigo installation:
 .\Vestigo.Playwright.Setup-1.0.0.exe --mode external --quiet
 ```
 
-`--vestigo` takes the absolute directory that contains `Vestigo.exe` and `Vestigo.Abstractions.dll` when Vestigo is portable or installed outside Program Files. `--mode managed` also requires `node.exe` on `PATH` or under the usual Node.js install directories, and Chrome or Edge registered in App Paths. `--verify-only` checks the embedded MSI hash and the selected prerequisites, then exits without installing. `--uninstall` removes the product whose code is embedded in that Setup.exe.
+`--vestigo` takes the fully qualified directory that contains `Vestigo.exe` and `Vestigo.Abstractions.dll` when Vestigo is portable or installed outside Program Files. `--mode managed` also requires Chrome or Edge registered in App Paths, and a managed host: `node.exe` on `PATH` or under the usual Node.js install directories, or the file named by `Vestigo:Modules:Playwright:ExecutablePath` in Vestigo's `appsettings.json` when that file exists. `--verify-only` checks the embedded MSI hash and the selected prerequisites, then exits without installing. `--uninstall` removes the product whose code is embedded in that Setup.exe.
 
 The MSI can be installed directly. It does not check for Vestigo, Node.js, or a browser.
 
@@ -47,7 +47,7 @@ The product code above is version 1.0.0. Repair and uninstall of another version
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Setup finished. Windows Installer codes 3010 and 1641 are also reported as success. |
+| 0 | Setup finished. Windows Installer codes 3010 and 1641 are also reported as success. Both mean a reboot is still required before replaced files are loaded. |
 | 1 | The arguments are not valid, or this build has no embedded MSI. |
 | 2 | Managed mode did not find Node.js or Chrome or Edge. |
 | 3 | Reserved for a download failure. This build does not download anything. |

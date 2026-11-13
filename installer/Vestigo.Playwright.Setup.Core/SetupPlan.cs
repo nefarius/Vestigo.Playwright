@@ -77,7 +77,7 @@ public static class SetupArguments
             if (TryTake(args, ref index, arg, "--vestigo", out string? path))
             {
                 Remember(seen, "--vestigo");
-                if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path))
+                if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
                     throw new SetupException(ExitCodes.BadArguments, "The Vestigo path must be absolute.");
                 vestigo = path;
                 continue;

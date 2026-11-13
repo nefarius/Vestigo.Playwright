@@ -96,16 +96,20 @@ public sealed class SetupCoreTests
     [Fact]
     public void Arguments_AcceptAbsoluteHostPathsAndRejectConflicts()
     {
-        SetupInvocation parsed = SetupArguments.Parse(["--quiet", "--mode", "managed", "--vestigo", "/opt/vestigo"]);
+        string vestigo = OperatingSystem.IsWindows() ? @"C:\Vestigo" : "/opt/vestigo";
+        SetupInvocation parsed = SetupArguments.Parse(["--quiet", "--mode", "managed", "--vestigo", vestigo]);
         Assert.True(parsed.Quiet);
         Assert.Equal(PrerequisiteMode.Managed, parsed.Mode);
-        Assert.Equal("/opt/vestigo", parsed.VestigoDirectory);
+        Assert.Equal(vestigo, parsed.VestigoDirectory);
 
         SetupInvocation external = SetupArguments.Parse(["--mode=external", "--verify-only"]);
         Assert.Equal(PrerequisiteMode.External, external.Mode);
         Assert.True(external.VerifyOnly);
 
         Assert.Equal(ExitCodes.BadArguments, Assert.Throws<SetupException>(() => SetupArguments.Parse(["--vestigo", "relative\\vestigo"])).ExitCode);
+        Assert.Equal(ExitCodes.BadArguments, Assert.Throws<SetupException>(() => SetupArguments.Parse(["--vestigo", ""])).ExitCode);
+        if (OperatingSystem.IsWindows())
+            Assert.Equal(ExitCodes.BadArguments, Assert.Throws<SetupException>(() => SetupArguments.Parse(["--vestigo", @"C:vestigo"])).ExitCode);
         Assert.Equal(ExitCodes.BadArguments, Assert.Throws<SetupException>(() => SetupArguments.Parse(["--verify-only", "--uninstall"])).ExitCode);
         Assert.Equal(ExitCodes.BadArguments, Assert.Throws<SetupException>(() => SetupArguments.Parse(["--mode", "bundle"])).ExitCode);
         Assert.True(SetupArguments.Parse(["--help"]).Help);
@@ -120,6 +124,17 @@ public sealed class SetupCoreTests
 
         Assert.True(NodeLayout.Found(path => path.EndsWith("node.exe"), NodeLayout.Candidates("C:\\Tools", "/opt", null, null)));
         Assert.False(NodeLayout.Found(_ => false, NodeLayout.Candidates(null, "/opt", null, null)));
+        const string configured = @"C:\runtime\dotnet.exe";
+        bool configuredHost = NodeLayout.Found(path => path == configured, NodeLayout.Candidates(null, @"C:\Program Files", null, null, configured));
+        Assert.True(configuredHost);
+        Assert.False(NodeLayout.Found(_ => false, NodeLayout.Candidates(null, @"C:\Program Files", null, null, configured)));
+        Assert.Equal(ExitCodes.Success, SetupPlanner.Evaluate(new SetupInvocation(null, PrerequisiteMode.Managed, false, false, false, false), true, configuredHost, true));
+        Assert.Equal(configured, PlaywrightHostSettings.ExecutablePath("""{"vestigo":{"modules":{"playwright":{"ExecutablePath":"C:\\runtime\\dotnet.exe"}}}}"""));
+        Assert.Null(PlaywrightHostSettings.ExecutablePath("""{"Vestigo":{"Modules":{"Playwright":{}}}}"""));
+        Assert.Equal(Path.Combine(@"D:\state", "appsettings.json"), PlaywrightHostSettings.File(@"D:\state", @"C:\ProgramData"));
+        Assert.Equal(
+            Path.Combine(@"C:\ProgramData", "Nefarius Software Solutions", "Vestigo", "appsettings.json"),
+            PlaywrightHostSettings.File("  ", @"C:\ProgramData"));
 
         Assert.True(BrowserLayout.Found((hive, key) => hive == "HKCU" && key.EndsWith("msedge.exe") ? "/opt/msedge.exe" : null, path => path == "/opt/msedge.exe"));
         Assert.False(BrowserLayout.Found((_, _) => "/missing.exe", _ => false));

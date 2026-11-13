@@ -93,17 +93,20 @@ internal static class Program
         // root; it is protected after the plugin tree so that grant cannot replace the file ACLs.
         const string pluginsDirectory = "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\"";
         const string pluginDirectory = "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright\"";
+        // icacls treats *SID as a well-known SID. This action runs icacls.exe directly, so the asterisk is not expanded.
+        const string fileGrants = "*S-1-5-18:F *S-1-5-32-544:F *S-1-5-32-545:RX /T";
+        const string directoryGrants = "\"*S-1-5-18:(OI)(CI)F\" \"*S-1-5-32-544:(OI)(CI)F\" \"*S-1-5-32-545:(OI)(CI)RX\"";
         project.AddAction(AclAction(
             "ProtectPlaywrightFiles",
-            pluginDirectory + " /inheritance:r /grant:r SYSTEM:F Administrators:F Users:RX /T",
+            pluginDirectory + " /inheritance:r /grant:r " + fileGrants,
             Step.InstallFiles));
         project.AddAction(AclAction(
             "ProtectPlaywrightDirectory",
-            pluginDirectory + " /inheritance:r /grant:r \"SYSTEM:(OI)(CI)F\" \"Administrators:(OI)(CI)F\" \"Users:(OI)(CI)RX\"",
+            pluginDirectory + " /inheritance:r /grant:r " + directoryGrants,
             new Step("ProtectPlaywrightFiles")));
         project.AddAction(AclAction(
             "ProtectPluginsDirectory",
-            pluginsDirectory + " /inheritance:r /grant:r \"SYSTEM:(OI)(CI)F\" \"Administrators:(OI)(CI)F\" \"Users:(OI)(CI)RX\"",
+            pluginsDirectory + " /inheritance:r /grant:r " + directoryGrants,
             new Step("ProtectPlaywrightDirectory")));
         string msi = project.BuildMsi();
         if (!File.Exists(msi))

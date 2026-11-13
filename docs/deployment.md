@@ -1,6 +1,6 @@
 # Deployment
 
-The Windows installer copies the published plugin into the protected Vestigo plugin root. It does not enable plugin loading, enable the `Playwright` module, or restart Vestigo. Install or upgrade with [installer.md](installer.md), then stop Vestigo and start it again so the host loads the new files. The public Vestigo MSI does not carry this plugin.
+The Windows installer copies the published plugin into the protected Vestigo plugin root. It does not enable plugin loading, enable the `Playwright` module, or restart Vestigo. Stop Vestigo, then install or upgrade with [installer.md](installer.md). If Windows Installer returns 3010, reboot before the replaced files are active; starting Vestigo again does not load files that are still waiting for that reboot. After the files are in place, start Vestigo again. When `TrustMode` is `PinnedSha256`, set `Vestigo:Plugins:PackageHashes:playwright` to the tree hash of the new plugin before that start. The public Vestigo MSI does not carry this plugin.
 
 A checkout can also publish the directory and copy it by hand:
 

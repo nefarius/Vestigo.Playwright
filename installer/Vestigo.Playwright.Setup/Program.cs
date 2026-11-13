@@ -23,11 +23,28 @@ internal static class Program
             string vestigoDirectory = invocation.VestigoDirectory ?? HostLayout.DefaultDirectory(
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
             bool vestigoFound = HostLayout.ContainsHost(File.Exists, vestigoDirectory);
+            string? configuredExecutable = null;
+            string settingsFile = PlaywrightHostSettings.File(
+                Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR"),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+            if (File.Exists(settingsFile))
+            {
+                try
+                {
+                    configuredExecutable = PlaywrightHostSettings.ExecutablePath(File.ReadAllText(settingsFile));
+                }
+                catch (IOException)
+                {
+                    configuredExecutable = null;
+                }
+            }
+
             bool nodeFound = NodeLayout.Found(File.Exists, NodeLayout.Candidates(
                 Environment.GetEnvironmentVariable("PATH"),
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)));
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                configuredExecutable));
             int prerequisite = SetupPlanner.Evaluate(invocation, vestigoFound, nodeFound, WindowsBrowser.Installed());
             if (prerequisite != ExitCodes.Success)
                 return prerequisite;
@@ -70,7 +87,8 @@ internal static class Program
 
     private static int RunInstaller(string msi, SetupInvocation invocation)
     {
-        var start = new ProcessStartInfo("msiexec.exe") { UseShellExecute = false };
+        string installer = Path.Combine(Environment.SystemDirectory, "msiexec.exe");
+        var start = new ProcessStartInfo(installer) { UseShellExecute = false };
         if (invocation.Uninstall)
         {
             Guid productCode = ProductIdentity.ProductCode(SetupPayload.ProductVersion);

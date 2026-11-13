@@ -44,13 +44,22 @@ $settingsFile = Join-Path $settingsRoot 'appsettings.json'
 $sentinel = Join-Path $settingsRoot 'installer-sentinel'
 $profiles = Join-Path $settingsRoot 'playwright-managed-profiles'
 $artifacts = Join-Path $settingsRoot 'playwright-managed-artifacts'
-if (Test-Path -LiteralPath $settingsFile) { throw "Refusing to replace an existing Vestigo settings file: $settingsFile" }
+foreach ($existing in @($settingsFile, $sentinel, $profiles, $artifacts)) {
+    if (Test-Path -LiteralPath $existing) { throw "Refusing to replace an existing Vestigo path: $existing" }
+}
 $createdSettings = $false
 $process = $null
 
+function Format-CommandLine([string[]]$Values) {
+    ($Values | ForEach-Object {
+        if ($_ -notmatch '[\s"]') { $_ }
+        else { '"' + $_.Replace('"', '\"') + '"' }
+    }) -join ' '
+}
+
 function Invoke-Msi([string[]]$Arguments, [string]$Name) {
     $log = Join-Path $logs "$Name.log"
-    $process = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList ($Arguments + @('/norestart', '/l*v', $log)) -Wait -PassThru
+    $process = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList (Format-CommandLine ($Arguments + @('/norestart', '/l*v', $log))) -Wait -PassThru
     if ($process.ExitCode -notin 0, 3010) {
         throw "msiexec $Name failed with exit code $($process.ExitCode). Log: $log"
     }
@@ -58,7 +67,7 @@ function Invoke-Msi([string[]]$Arguments, [string]$Name) {
 
 function Invoke-Setup([string[]]$Arguments, [int]$Expected) {
     $output = Join-Path $logs ("setup-" + [guid]::NewGuid().ToString('N') + '.log')
-    $process = Start-Process -FilePath $setup -ArgumentList $Arguments -Wait -PassThru -RedirectStandardOutput $output -RedirectStandardError "$output.err"
+    $process = Start-Process -FilePath $setup -ArgumentList (Format-CommandLine $Arguments) -Wait -PassThru -RedirectStandardOutput $output -RedirectStandardError "$output.err"
     if ($process.ExitCode -ne $Expected) {
         $detail = ''
         foreach ($log in @($output, "$output.err")) {
@@ -277,6 +286,7 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if (-not $healthy) {
+        if (-not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
         throw "Published host did not become healthy.`n$($stderr.GetAwaiter().GetResult())`n$($stdout.GetAwaiter().GetResult())"
     }
     $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json, text/event-stream' }
@@ -347,7 +357,7 @@ finally {
     }
     foreach ($code in @($currentCode, $baselineCode)) {
         $log = Join-Path $logs ("cleanup-" + $code.Trim('{}') + '.log')
-        $cleanup = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList @('/x', $code, '/qn', '/norestart', '/l*v', $log) -Wait -PassThru
+        $cleanup = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList (Format-CommandLine @('/x', $code, '/qn', '/norestart', '/l*v', $log)) -Wait -PassThru
         if ($cleanup.ExitCode -notin 0, 3010, 1605) {
             Write-Warning "Cleanup uninstall of $code exited $($cleanup.ExitCode). Log: $log"
         }
