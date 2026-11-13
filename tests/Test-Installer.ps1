@@ -57,9 +57,14 @@ function Invoke-Msi([string[]]$Arguments, [string]$Name) {
 }
 
 function Invoke-Setup([string[]]$Arguments, [int]$Expected) {
-    $process = Start-Process -FilePath $setup -ArgumentList $Arguments -Wait -PassThru
+    $output = Join-Path $logs ("setup-" + [guid]::NewGuid().ToString('N') + '.log')
+    $process = Start-Process -FilePath $setup -ArgumentList $Arguments -Wait -PassThru -RedirectStandardOutput $output -RedirectStandardError "$output.err"
     if ($process.ExitCode -ne $Expected) {
-        throw "Setup $($Arguments -join ' ') exited $($process.ExitCode); expected $Expected."
+        $detail = ''
+        foreach ($log in @($output, "$output.err")) {
+            if (Test-Path -LiteralPath $log) { $detail += "`n" + (Get-Content -Raw -LiteralPath $log) }
+        }
+        throw "Setup $($Arguments -join ' ') exited $($process.ExitCode); expected $Expected.$detail"
     }
 }
 

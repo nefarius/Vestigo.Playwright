@@ -10,21 +10,17 @@
   <ItemGroup>
     <ProjectReference Include="..\Vestigo.Playwright.Setup.Core\Vestigo.Playwright.Setup.Core.csproj" />
   </ItemGroup>
-  <ItemGroup Condition="'$(SetupMsiPath)' != ''">
-    <EmbeddedResource Include="$(SetupMsiPath)" LogicalName="Vestigo.Playwright.Setup.Payload.msi" />
+  <ItemGroup Condition="'$(SetupPayloadSource)' != ''">
+    <Compile Include="$(SetupPayloadSource)" />
   </ItemGroup>
-  <Target Name="GenerateSetupPayload" BeforeTargets="CoreCompile">
-    <PropertyGroup>
-      <_SetupHash Condition="'$(SetupMsiHash)' == ''"></_SetupHash>
-      <_SetupVersion Condition="'$(SetupProductVersion)' == ''">0.0.0</_SetupVersion>
-    </PropertyGroup>
+  <Target Name="GenerateSetupPayload" BeforeTargets="CoreCompile" Condition="'$(SetupPayloadSource)' == ''">
     <ItemGroup>
       <_SetupPayloadLine Include="namespace Vestigo.Playwright.Setup%3B" />
       <_SetupPayloadLine Include="internal static class SetupPayload" />
       <_SetupPayloadLine Include="{" />
-      <_SetupPayloadLine Include="    internal const string ExpectedHash = &quot;$(_SetupHash)&quot;%3B" />
-      <_SetupPayloadLine Include="    internal const string ProductVersion = &quot;$(_SetupVersion)&quot;%3B" />
-      <_SetupPayloadLine Include="    internal const string ResourceName = &quot;Vestigo.Playwright.Setup.Payload.msi&quot;%3B" />
+      <_SetupPayloadLine Include="    internal const string ExpectedHash = &quot;&quot;%3B" />
+      <_SetupPayloadLine Include="    internal const string ProductVersion = &quot;0.0.0&quot;%3B" />
+      <_SetupPayloadLine Include="    internal const string PayloadBase64 = &quot;&quot;%3B" />
       <_SetupPayloadLine Include="}" />
     </ItemGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)SetupPayload.g.cs" Lines="@(_SetupPayloadLine)" Overwrite="true" />

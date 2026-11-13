@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.Versioning;
 using Microsoft.Win32;
 
@@ -60,14 +59,12 @@ internal static class Program
 
     private static string ExtractVerifiedPayload()
     {
-        if (SetupPayload.ExpectedHash.Length != 64)
+        if (SetupPayload.ExpectedHash.Length != 64 || SetupPayload.PayloadBase64.Length == 0)
             throw new SetupException(ExitCodes.BadArguments, "This setup build does not contain the plugin installer.");
-        using Stream? resource = Assembly.GetExecutingAssembly().GetManifestResourceStream(SetupPayload.ResourceName);
-        if (resource is null)
-            throw new SetupException(ExitCodes.BadArguments, "This setup build does not contain the plugin installer.");
+        byte[] payload = Convert.FromBase64String(SetupPayload.PayloadBase64);
         string extracted = Path.Combine(Path.GetTempPath(), "vestigo-playwright-" + Guid.NewGuid().ToString("N") + ".msi");
         using var destination = new FileStream(extracted, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        PayloadVerification.CopyVerified(resource, destination, SetupPayload.ExpectedHash);
+        PayloadVerification.CopyVerified(new MemoryStream(payload, writable: false), destination, SetupPayload.ExpectedHash);
         return extracted;
     }
 

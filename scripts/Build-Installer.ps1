@@ -102,14 +102,23 @@ if ($MsiOnly) {
 }
 
 $setupProject = Join-Path $root 'installer\Vestigo.Playwright.Setup\Vestigo.Playwright.Setup.csproj'
+$payloadSource = Join-Path $outDir 'SetupPayload.g.cs'
+$payloadBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($msi))
+@(
+    'namespace Vestigo.Playwright.Setup;'
+    'internal static class SetupPayload'
+    '{'
+    "    internal const string ExpectedHash = `"$hash`";"
+    "    internal const string ProductVersion = `"$Version`";"
+    "    internal const string PayloadBase64 = `"$payloadBase64`";"
+    '}'
+) | Set-Content -LiteralPath $payloadSource -Encoding utf8NoBOM
 $publish = Join-Path $outDir 'setup-publish'
 dotnet publish $setupProject -c Release -r win-x64 --self-contained true -o $publish `
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:DebugType=none `
-    -p:SetupMsiPath=$msi `
-    -p:SetupMsiHash=$hash `
-    -p:SetupProductVersion=$Version
+    -p:SetupPayloadSource=$payloadSource
 $published = Join-Path $publish 'Vestigo.Playwright.Setup.exe'
 if (-not (Test-Path -LiteralPath $published)) { throw "Setup publish did not produce $published." }
 $setup = Join-Path $outDir "Vestigo.Playwright.Setup-$Version.exe"
