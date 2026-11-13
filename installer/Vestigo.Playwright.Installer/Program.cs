@@ -88,27 +88,36 @@ internal static class Program
         WixExtension.Util.PreferredVersion = "5.0.2";
         project.Include(WixExtension.Util);
         // Deferred so it runs after InstallFiles has created the directory. (OI)(CI) on a file is
-        // inherit-only and blocks the next upgrade, so files get an explicit grant. cmd.exe /c keeps
-        // the parentheses and wildcard inside one quoted command.
-        const string pluginDirectory = "[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright";
-        string aclArguments =
-            "/d /s /c \"icacls \\\"" + pluginDirectory + "\\\" /inheritance:r /grant:r SYSTEM:(OI)(CI)F Administrators:(OI)(CI)F Users:(OI)(CI)RX " +
-            "&& icacls \\\"" + pluginDirectory + "\\*\" /inheritance:r /grant:r SYSTEM:F Administrators:F Users:RX /T\"";
-        var protect = new WixQuietExecAction(
-            new Id("ProtectPlaywrightAcl"),
-            "cmd.exe",
-            aclArguments,
-            Return.check,
-            When.After,
-            Step.InstallFiles,
-            new Condition("NOT REMOVE~=\"ALL\""));
-        protect.Execute = Execute.deferred;
-        protect.Impersonate = false;
-        project.AddAction(protect);
+        // inherit-only and blocks the next upgrade, so files get an explicit grant first and the
+        // directory then gets the inheritable grant.
+        const string pluginDirectory = "\"[CommonAppDataFolder]Nefarius Software Solutions\\Vestigo\\plugins\\playwright\"";
+        project.AddAction(AclAction(
+            "ProtectPlaywrightFiles",
+            pluginDirectory + " /inheritance:r /grant:r SYSTEM:F Administrators:F Users:RX /T",
+            Step.InstallFiles));
+        project.AddAction(AclAction(
+            "ProtectPlaywrightDirectory",
+            pluginDirectory + " /inheritance:r /grant:r \"SYSTEM:(OI)(CI)F\" \"Administrators:(OI)(CI)F\" \"Users:(OI)(CI)RX\"",
+            new Step("ProtectPlaywrightFiles")));
         string msi = project.BuildMsi();
         if (!File.Exists(msi))
             throw new InvalidOperationException("WiX did not produce the MSI.");
         return msi;
+    }
+
+    private static WixQuietExecAction AclAction(string id, string arguments, Step after)
+    {
+        var action = new WixQuietExecAction(
+            new Id(id),
+            "icacls.exe",
+            arguments,
+            Return.check,
+            When.After,
+            after,
+            new Condition("NOT REMOVE~=\"ALL\""));
+        action.Execute = Execute.deferred;
+        action.Impersonate = false;
+        return action;
     }
 
     private static void ValidatePayload(string payload)
