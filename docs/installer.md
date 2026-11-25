@@ -49,7 +49,7 @@ The product code above is version 1.0.0. Repair and uninstall of another version
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Setup finished. Windows Installer codes 3010 and 1641 are also reported as success. Both mean a reboot is still required before replaced files are loaded. |
+| 0 | Setup finished. Windows Installer results 0, 3010, and 1641 are all reported as 0, and Setup.exe does not print the original result. Reboot only when `msiexec` itself returns 3010 or 1641. |
 | 1 | The arguments are not valid, or this build has no embedded MSI. |
 | 2 | Managed mode did not find the configured `ExecutablePath` file (or Node.js when none is configured), or did not find Chrome or Edge. |
 | 3 | Reserved for a download failure. This build does not download anything. |

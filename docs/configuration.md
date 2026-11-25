@@ -43,7 +43,7 @@ A remote endpoint must be HTTPS unless `AllowInsecureRemote` is true, and `Exter
 
 `ExternalIsolation` is `PerSession` (default) or `Exclusive`. Per-session means the administrator started that endpoint with `--isolated` and without a shared context, extension, or CDP. The plugin cannot detect those flags. Exclusive leases the endpoint to one application identity.
 
-`ShareBrowser` defaults to false and requires `AllowSharedBrowser`. It collapses every identity onto one browser. It is a managed-mode option: an `External` configuration with `ShareBrowser` is rejected under both `Exclusive` and `PerSession` isolation. The plugin does not fall back to sharing when isolation cannot be established.
+`ShareBrowser` defaults to false and requires `AllowSharedBrowser`. It collapses every identity onto one browser. It cannot be combined with `Exclusive` isolation in Managed or External mode, even when `AllowSharedBrowser` is true. An `External` configuration that sets `ShareBrowser` is also rejected when isolation is `PerSession`. Managed mode can share only while isolation stays `PerSession`. The plugin does not fall back to sharing when isolation cannot be established.
 
 ## Limits
 
