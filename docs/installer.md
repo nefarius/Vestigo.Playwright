@@ -43,13 +43,22 @@ msiexec /fa {6a3efdd9-227a-5d27-8282-6cf022f3a59d} /qn /norestart
 msiexec /x {6a3efdd9-227a-5d27-8282-6cf022f3a59d} /qn /norestart
 ```
 
+PowerShell starts `msiexec` and continues, so those lines do not show the install result. Wait for the process that performed the install:
+
+```powershell
+$install = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList '/i','Vestigo.Playwright-1.0.0.msi','/qn','/norestart' -Wait -PassThru
+$install.ExitCode
+```
+
+Reboot when that value is 3010 or 1641. The same wait applies to repair and uninstall. In `cmd.exe`, that value is `ERRORLEVEL` after `msiexec` returns.
+
 The product code above is version 1.0.0. Repair and uninstall of another version use that version's product code. Uninstall removes the plugin directory and leaves Vestigo settings and browser profiles in place.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Setup finished. Windows Installer results 0, 3010, and 1641 are all reported as 0. Setup.exe does not print or save the original result. That result is visible only on the `msiexec` process that performed the install. If Setup.exe already finished, reboot when `PendingFileRenameOperations` is set; a later `msiexec` exit code of 0 does not clear that. |
+| 0 | Setup finished. Windows Installer results 0, 3010, and 1641 are all reported as 0. Setup.exe does not print or save that result, and it does not enable a verbose log. Read 3010 or 1641 from the `msiexec` process that performed the install. After either Setup.exe or `msiexec` finishes, the Application log source `MsiInstaller` records a deferred restart as event 1029 and as event 1038 with reboot type 2. A verbose log contains `MainEngineThread is returning 3010` only when that install was started with `/l*v` or the Installer Logging policy was already on. `PendingFileRenameOperations` lists files that could not be replaced. A later `msiexec` exit code of 0 does not clear any of those. |
 | 1 | The arguments are not valid, or this build has no embedded MSI. |
 | 2 | Managed mode did not find the configured `ExecutablePath` file (or Node.js when none is configured), or did not find Chrome or Edge. |
 | 3 | Reserved for a download failure. This build does not download anything. |
