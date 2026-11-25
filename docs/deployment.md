@@ -1,6 +1,6 @@
 # Deployment
 
-The Windows installer copies the published plugin into the protected Vestigo plugin root. It does not enable plugin loading, enable the `Playwright` module, or restart Vestigo. Stop Vestigo, then install or upgrade with [installer.md](installer.md). If Windows Installer returns 3010, reboot before the replaced files are active; starting Vestigo again does not load files that are still waiting for that reboot. After the files are in place, start Vestigo again. When `TrustMode` is `PinnedSha256`, set `Vestigo:Plugins:PackageHashes:playwright` to the tree hash of the new plugin before that start. The public Vestigo MSI does not carry this plugin.
+The Windows installer copies the published plugin into the protected Vestigo plugin root. It does not enable plugin loading, enable the `Playwright` module, or restart Vestigo. Stop Vestigo, then install or upgrade with [installer.md](installer.md). If Windows Installer returns 3010 or 1641 (Setup.exe reports both as exit code 0), reboot before the replaced files are active; starting Vestigo again does not load files that are still waiting for that reboot. After the files are in place, start Vestigo again. When `TrustMode` is `PinnedSha256`, set `Vestigo:Plugins:PackageHashes:playwright` to the tree hash of the new plugin before that start. The public Vestigo MSI does not carry this plugin.
 
 A checkout can also publish the directory and copy it by hand:
 
@@ -41,4 +41,4 @@ Set `Headed` to false for an interactive session that should stay headless. Head
 
 ## What was verified
 
-On this machine, a published Vestigo host loaded the published plugin, listed and called the fake backend through `/mcp`, isolated two owners and two session IDs, hid the tools when the module was disabled, and refused to start when `Prefix` was `list_`. The fake backend is not Playwright. Official-browser, service, and existing-browser attachment runs are still open.
+In the Windows test runs, a published Vestigo host loaded the published plugin, listed and called the fake backend through `/mcp`, isolated two owners and two session IDs, hid the tools when the module was disabled, and refused to start when `Prefix` was `list_`. The fake backend is not Playwright. Official-browser, service, and existing-browser attachment runs are still open.

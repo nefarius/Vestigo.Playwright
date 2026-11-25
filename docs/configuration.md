@@ -35,7 +35,7 @@ A remote endpoint must be HTTPS unless `AllowInsecureRemote` is true, and `Exter
 
 `Browser` is `msedge` (default) or `chrome`. `Headed` defaults to true. Managed headed mode is rejected when Vestigo is in Windows session 0. Use external mode for a visible browser behind a service, or set `Headed` to false.
 
-`ProfileMode` is `Ephemeral` (default) or `Persistent`. Ephemeral managed browsers get `--isolated`. Persistent profiles and artifact directories default under `%ProgramData%\Nefarius Software Solutions\Vestigo Playwright`. Both roots must be absolute and outside the plugin deployment directory. The directory leaf is a SHA-256 of the owner ID and session ID, not the raw IDs.
+`ProfileMode` is `Ephemeral` (default) or `Persistent`. Ephemeral managed browsers get `--isolated`. `ProfilesRoot` and `ArtifactsRoot` default to the `profiles` and `artifacts` folders under `%ProgramData%\Nefarius Software Solutions\Vestigo Playwright`. Both roots must be absolute, outside the plugin deployment directory, and not a reparse point. The directory leaf is a SHA-256 of the owner ID and session ID, not the raw IDs.
 
 `Attach` is `None` (default), `Cdp`, or `Extension`. Attachment is managed-only, requires `AllowSharedBrowser`, and shares the existing browser. `CdpEndpoint` must be a loopback `http`, `https`, `ws`, or `wss` URL without credentials or a query.
 
@@ -43,7 +43,7 @@ A remote endpoint must be HTTPS unless `AllowInsecureRemote` is true, and `Exter
 
 `ExternalIsolation` is `PerSession` (default) or `Exclusive`. Per-session means the administrator started that endpoint with `--isolated` and without a shared context, extension, or CDP. The plugin cannot detect those flags. Exclusive leases the endpoint to one application identity.
 
-`ShareBrowser` defaults to false and requires `AllowSharedBrowser`. It collapses every identity onto one browser. It cannot be combined with exclusive isolation. The plugin does not fall back to sharing when isolation cannot be established.
+`ShareBrowser` defaults to false and requires `AllowSharedBrowser`. It collapses every identity onto one browser. It is a managed-mode option: an `External` configuration with `ShareBrowser` is rejected under both `Exclusive` and `PerSession` isolation. The plugin does not fall back to sharing when isolation cannot be established.
 
 ## Limits
 
